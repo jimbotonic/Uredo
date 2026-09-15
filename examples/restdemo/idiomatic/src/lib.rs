@@ -14,6 +14,7 @@ pub mod field;
 pub mod handler;
 pub mod model;
 pub mod query;
+pub mod repr;
 pub mod router;
 pub mod store;
 pub mod wire;

@@ -9,9 +9,10 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpStream;
 
 use crate::error::Error;
-use crate::handler::{Reply, body_in, no_content, raw, value_out, value_out_cached};
+use crate::handler::{Reply, Wants, body_in, no_content, raw, value_out, value_out_cached};
 use crate::model::{Item, ItemPatch, NewItem};
 use crate::query::Query;
+use crate::repr::{Coding, Wire};
 use crate::router::{Route, resolve};
 use crate::store::Store;
 
@@ -50,16 +51,20 @@ async fn dispatch(
         return Err(Error::NotFound);
     };
     let raw_query = req.uri().query().unwrap_or("");
-    let if_none_match = req.headers().get("if-none-match").and_then(|v| v.to_str().ok());
+    let wants = Wants {
+        wire: Wire::of(header(&req, "accept")),
+        coding: Coding::of(header(&req, "accept-encoding")),
+        if_none_match: header(&req, "if-none-match").map(str::to_string),
+    };
 
     match found {
         Route::Health => value_out(200, || Ok(state.health())),
         Route::ListItems => {
             let filter = Query::parse(raw_query)?;
-            value_out_cached(200, if_none_match, || Ok(state.select(&filter)))
+            value_out_cached(200, &wants, || Ok(state.select(&filter)))
         }
         Route::GetItem(id) => {
-            value_out_cached(200, if_none_match, || state.get(id).ok_or(Error::NotFound))
+            value_out_cached(200, &wants, || state.get(id).ok_or(Error::NotFound))
         }
         Route::DeleteItem(id) => no_content(|| {
             if state.delete(id) { Ok(()) } else { Err(Error::NotFound) }
@@ -72,6 +77,11 @@ async fn dispatch(
             .await
         }
     }
+}
+
+/// One request header, as a borrowed string.
+fn header<'a>(req: &'a Request<Incoming>, name: &str) -> Option<&'a str> {
+    req.headers().get(name).and_then(|v| v.to_str().ok())
 }
 
 /// The one endpoint with logic of its own.

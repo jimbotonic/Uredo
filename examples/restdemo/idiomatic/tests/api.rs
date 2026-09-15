@@ -220,3 +220,94 @@ async fn shutdown_stops_accepting_and_lets_the_work_finish() {
     let refused = TcpStream::connect(("127.0.0.1", port)).await;
     assert!(refused.is_err(), "the server kept accepting after shutdown");
 }
+
+/// The bytes after the blank line.
+fn body_of(response: &str) -> String {
+    match response.split_once("\r\n\r\n") {
+        Some((_head, body)) => body.to_string(),
+        None => String::new(),
+    }
+}
+
+#[tokio::test]
+async fn the_compact_shape_drops_the_field_names() {
+    let port = start().await;
+    assert_eq!(
+        status_of(&request(port, "POST /items HTTP/1.1", "{\"name\":\"n\",\"labels\":[\"a\"]}").await),
+        201
+    );
+
+    let keyed = request(port, "GET /items/1 HTTP/1.1", "").await;
+    let compact = request(
+        port,
+        "GET /items/1 HTTP/1.1\r\nAccept: application/vnd.restdemo.compact+json",
+        "",
+    )
+    .await;
+    assert_eq!(status_of(&compact), 200);
+
+    assert!(keyed.contains("\"name\":\"n\""), "{keyed}");
+    assert!(!compact.contains("\"name\":"), "the compact form still names fields: {compact}");
+    assert!(compact.contains("[1,0,0.0,\"n\",false,null,[\"a\"],{}]"), "{compact}");
+    assert_eq!(
+        header_of(&compact, "content-type"),
+        Some("application/vnd.restdemo.compact+json".to_string())
+    );
+
+    let kb = body_of(&keyed).len();
+    let cb = body_of(&compact).len();
+    assert!(cb < kb, "compact {cb} is not smaller than keyed {kb}");
+}
+
+#[tokio::test]
+async fn brotli_is_used_when_it_is_asked_for_and_worth_it() {
+    let port = start().await;
+    for n in 0..40 {
+        let body = format!("{{\"name\":\"item-{n}\",\"labels\":[\"alpha\",\"beta\"]}}");
+        assert_eq!(status_of(&request(port, "POST /items HTTP/1.1", &body).await), 201);
+    }
+
+    let plain = request(port, "GET /items HTTP/1.1", "").await;
+    let zipped = request(port, "GET /items HTTP/1.1\r\nAccept-Encoding: br", "").await;
+    assert_eq!(status_of(&zipped), 200);
+    assert_eq!(header_of(&zipped, "content-encoding"), Some("br".to_string()));
+    assert!(
+        body_of(&zipped).len() * 4 < body_of(&plain).len(),
+        "brotli saved little: {} vs {}",
+        body_of(&zipped).len(),
+        body_of(&plain).len()
+    );
+
+    // a body under the threshold is not worth a brotli frame, and does not get one
+    let small = request(port, "GET /health HTTP/1.1\r\nAccept-Encoding: br", "").await;
+    assert_eq!(header_of(&small, "content-encoding"), None);
+}
+
+#[tokio::test]
+async fn every_representation_gets_its_own_tag_and_says_so() {
+    // A cache that keyed only on the URL would serve one client's shape to another.
+    let port = start().await;
+    assert_eq!(status_of(&request(port, "POST /items HTTP/1.1", "{\"name\":\"v\"}").await), 201);
+
+    let keyed = request(port, "GET /items/1 HTTP/1.1", "").await;
+    let compact = request(
+        port,
+        "GET /items/1 HTTP/1.1\r\nAccept: application/vnd.restdemo.compact+json",
+        "",
+    )
+    .await;
+
+    let Some(kt) = header_of(&keyed, "etag") else { panic!("no ETag on the keyed form") };
+    let Some(ct) = header_of(&compact, "etag") else { panic!("no ETag on the compact form") };
+    assert_ne!(kt, ct, "two shapes shared one ETag, so a cache could swap them");
+
+    for r in [&keyed, &compact] {
+        assert_eq!(header_of(r, "vary"), Some("accept, accept-encoding".to_string()));
+    }
+
+    let head = format!(
+        "GET /items/1 HTTP/1.1\r\nAccept: application/vnd.restdemo.compact+json\r\nIf-None-Match: {ct}"
+    );
+    let again = request(port, &head, "").await;
+    assert_eq!(status_of(&again), 304);
+}

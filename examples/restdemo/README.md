@@ -83,17 +83,21 @@ Measured with the project's own tokenizer over library sources only, as the corp
 
 | | Uredo | Rust | delta | the corpus, for comparison |
 |---|---|---|---|---|
-| **tokens** | 3,981 | 4,444 | **−10.4%** | −13.0% |
-| lines | 425 | 523 | **−18.7%** | −35.3% |
-| non-whitespace characters | 12,227 | 12,749 | **−4.1%** | −8.1% |
-| — of which identifiers | 1,846 | 1,863 | **−0.9%** | |
-| — of which punctuation | 2,040 | 2,486 | **−17.9%** | |
+| **tokens** | 4,855 | 5,388 | **−9.9%** | −13.0% |
+| lines | 518 | 637 | **−18.7%** | −35.3% |
+| non-whitespace characters | 14,839 | 15,429 | **−3.8%** | −8.1% |
+| — of which identifiers | 2,235 | 2,251 | **−0.7%** | |
+| — of which punctuation | 2,504 | 3,022 | **−17.1%** | |
+| functions | 57 | 57 | 0.0% | |
 
-> **Stale as a whole-library figure.** Content negotiation was added to the Uredo side only, so
-> `repr`, `handler` and `wire` are no longer the same program on both sides and the totals above
-> predate it. Over the nine modules that *are* still equivalent — `error`, `etag`, `field`, `lib`,
-> `main`, `model`, `query`, `router`, `store` — the reading is **2,799 against 3,148 tokens,
-> −11.1%**, which is the same answer. The whole-library number returns when the twin is ported.
+Both sides carry the content negotiation, so the comparison is whole-library again. **The
+equivalence is byte-level, not merely behavioural**: driven with the same requests the two
+servers return the same lengths *and the same ETag*, which is a hash of the bytes they wrote —
+
+```
+uredo      keyed 110  compact 49  listing 334  listing compact+br 151   etag "1195307f2dd081e0"
+rust twin  keyed 110  compact 49  listing 334  listing compact+br 151   etag "1195307f2dd081e0"
+```
 | annotations | 79 | 84 | **−6.0%** | signature ratio 0.48 |
 | functions | 45 | 45 | 0.0% | — |
 
