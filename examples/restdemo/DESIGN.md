@@ -139,6 +139,8 @@ The program is not the deliverable. These are:
 5. **Two benchmarks, with different expectations.**
    - *Against the hand-written Rust twin of the same design:* **expect parity.** A null result
      confirms §36 and is the honest outcome; a gap either way is a finding about the compiler.
+     **Run, 2026-09-15: 39,495 against 39,219 rps, +0.7% on medians, inside a 25.4% noise floor.
+     Parity, as predicted.** `bench/run.sh`.
    - *Against a framework-shaped equivalent (axum, same routes, same responses):* **expect a win**,
      and report it as a result about the *design* — fixed routing and borrowed parsing against a
      dynamic router and an owned-`String` path — never as a result about Uredo.

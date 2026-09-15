@@ -136,7 +136,32 @@ defect rather than a design question: **`@!default_error` never reached a child 
 uses it, and it is worth **2 tokens** — which is the honest measure of this lever. It was worth
 fixing because the code disagreed with the document, not because of what it saves.
 
-The benchmarks are still not written.
+### The benchmark against the twin
+
+`bench/run.sh`, committed, on this machine: `GET /items/1`, 32 keep-alive connections, 8-second
+runs, five repetitions, server pinned to eight cores and the load generator to the other eight.
+
+| | median rps | p50 | spread across runs |
+|---|---|---|---|
+| **Uredo** | **39,495** | ~740 µs | 8.6% |
+| **Rust twin** | **39,219** | ~750 µs | 7.4% |
+
+**+0.7% for Uredo on medians, and 4 of 5 paired runs — which is a coin flip, not a result.** The
+control says why: the *same binary* run twice varies by 25.4%, and even the tighter within-side
+spreads are 7–9%. A 0.7% difference sits far inside both.
+
+**That null result is the expected one and the one worth having.** Uredo has no runtime; §36
+retired the runtime budget because generated Rust performs like hand-written Rust. This is the
+first time that has been measured on a running program rather than argued from the lowering.
+
+The load generator is written here rather than taken off the shelf, so the measurement is
+reproducible from this repository and the generator's own ceiling sits beside the thing it
+measures. It reports a distribution because two servers within noise of each other is the
+expected outcome, and a single mean would hide it.
+
+What this is **not**: a claim about any framework. The design permits exactly one other
+comparison — against a framework-shaped equivalent on identical routes, where a win would belong
+to fixed routing and borrowed parsing rather than to Uredo — and that one has not been run.
 
 ## What it cost, and what that bought
 
