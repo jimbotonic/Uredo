@@ -105,6 +105,7 @@ not Uredo.
 
 | Path | What it is |
 |---|---|
+| `DECISIONS.md` | **Why it is the way it is.** Short answers to what people ask for first — `take`, `var`, the turbofish, the apostrophes, why there is no type engine — each pointing at the section that owns the argument. Read it before proposing a change. |
 | `docs/MANUAL.md` | **The manual — start here.** Teaches the language: install, the passing modes, optionals and errors, traits, interop, the toolchain, and the mistakes its author actually made. Every example in it is compiled by rustc in the test suite. |
 | `docs/MANUAL.pdf` | The same manual, typeset: title page, table of contents, running heads and highlighted listings. `docs/pdf/build.sh` regenerates it from the markdown, so the two cannot drift. |
 | `docs/UREDO_LANGUAGE_SPEC_v0.4.md` | The specification. §0 records every decision and its evidence; §1–§33 are the rules; §34 onward hold the acceptance criteria, the questions still open, and the record of how each claim was measured. It is a record, not an introduction — read the manual first. |

@@ -8,6 +8,7 @@ one that matters most — does every section number the *compiler* prints in a d
 
 usage: docs/spec_audit.py [spec.md]        (default: the current version)
 """
+import glob
 import os
 import re
 import subprocess
@@ -98,6 +99,48 @@ for root, _dirs, files in os.walk(os.path.join(ROOT, "compiler", "src")):
 print("sections cited by the compiler: %d" % len(cited_by_compiler))
 for c in sorted(cited_by_compiler - sections):
     report("compiler cites", "§%s, which the specification does not have" % c)
+
+# ---- every cited file path exists --------------------------------------------
+# The document cites its own evidence by path. Nothing checked those, so one had rotted
+# (`tools/pieces.py`, which has never existed) and the public mirror published sixteen
+# references to directories it deliberately does not carry.
+#
+# UNPUBLISHED is that deliberate set: the working record behind the decisions. Those paths are
+# exempt from the existence check, and a reader of the public repository is told so by §0.2. In
+# the working repository they are checked the other way round — if one of them has gone missing
+# there, the list itself has rotted.
+UNPUBLISHED_PREFIXES = ("docs/oracle-reviews/", "docs/compat/")
+UNPUBLISHED_EXACT = {"docs/COMPATIBILITY.md"}
+PUBLISHED_FROM_CORPUS_STUDY = {
+    "docs/corpus-study/roundtrip/tools/ircmp.py",
+    "docs/corpus-study/roundtrip/tools/irstat.py",
+}
+
+
+def unpublished(path):
+    if path.startswith(UNPUBLISHED_PREFIXES) or path in UNPUBLISHED_EXACT:
+        return True
+    return path.startswith("docs/corpus-study/") and path not in PUBLISHED_FROM_CORPUS_STUDY
+
+
+cited_paths = {}
+for i, line in enumerate(lines, 1):
+    for m in re.finditer(r"`((?:docs|corpus|examples|tools|compiler)/[A-Za-z0-9_./-]*)`", line):
+        cited_paths.setdefault(m.group(1), []).append(i)
+checked = [p for p in cited_paths if not unpublished(p)]
+exempt = [p for p in cited_paths if unpublished(p)]
+print("cited paths: %d (%d checked, %d recorded as unpublished)" % (len(cited_paths), len(checked), len(exempt)))
+for path in sorted(checked):
+    full = os.path.join(ROOT, path.rstrip("/"))
+    if not (os.path.exists(full) or glob.glob(full + "*")):
+        report("cited path", "%s does not exist (lines %s)" % (path, ", ".join(str(l) for l in cited_paths[path][:3])))
+# The other direction, only where the working record is present: an exempt path that is missing
+# here means the exemption list has outlived the thing it exempts.
+if os.path.isdir(os.path.join(ROOT, "docs", "oracle-reviews")):
+    for path in sorted(exempt):
+        full = os.path.join(ROOT, path.rstrip("/"))
+        if not (os.path.exists(full) or glob.glob(full + "*")):
+            report("cited path", "%s is listed as unpublished but is missing here too" % path)
 
 # ---- every Uredo example lexes ------------------------------------------------
 blocks = re.findall(r"```uredo\n(.*?)```", text, re.S)
