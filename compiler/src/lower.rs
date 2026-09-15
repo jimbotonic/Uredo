@@ -1556,6 +1556,7 @@ impl Lowerer {
                 self.indent += 1;
                 self.fn_stack.push(FnCtx { receiver: f.receiver.clone(), self_ty: self_ty.map(|s| s.to_string()), throws: f.throws.clone(), ret: f.ret.as_ref().map(|t| t.text.clone()) });
                 let mode = if f.ret.is_some() { BlockMode::Value } else { BlockMode::Unit };
+                self.check_tail_shape(f);
                 let is_throws = f.throws.is_some();
                 if is_throws {
                     self.lower_throws_body(body, f.ret.is_some());
@@ -1573,6 +1574,72 @@ impl Lowerer {
     }
 
     /// Body of a `throws` function (§15.3, D37): tail values are wrapped in `Ok`.
+    /// Two mistakes the *value* half of a signature invites, both decidable from the declaration
+    /// and neither diagnosed before.
+    ///
+    /// `throws` says what a function returns when it fails and nothing about what it returns when
+    /// it succeeds, and that split caused four of the thirteen authoring errors in
+    /// `examples/restdemo` — one of them at seven sites in a single function. Until now Uredo
+    /// lowered all four silently and let rustc complain about generated code: writing `Ok(1)` in a
+    /// `throws` body produced `Result::Ok(Ok(1))` and an `expected u32, found Result<…>` pointing
+    /// at the *signature line*, never mentioning the rule that caused it.
+    fn check_tail_shape(&mut self, f: &FnDecl) {
+        let Some(body) = &f.body else { return };
+        let Some(last) = body.stmts.last() else { return };
+        let StmtKind::Expr(e) = &last.kind else { return };
+
+        // The declared value type, as written. Everything below reads only this.
+        let value = f.ret.as_ref().map(|t| t.text.trim().to_string());
+
+        // 1. `Ok(…)`/`Err(…)` by hand in a `throws` body. §15.3 wraps the tail already, so this
+        //    is `Ok(Ok(x))`. Correct only when the value type is itself a `Result` or optional,
+        //    which is exactly the case the guard keeps.
+        if f.throws.is_some() {
+            let wraps_itself = value.as_deref().is_some_and(|v| v.starts_with("Result") || v.ends_with('?') || v.starts_with("Option"));
+            if !wraps_itself {
+                if let Expr::Call { callee, line, col, .. } = e {
+                    if let Expr::Path(p) = &**callee {
+                        if p == "Ok" || p == "Err" {
+                            self.diags.push(
+                                Diag::error(*line, *col, format!(
+                                    "a `throws` body wraps its tail in `Ok` for you (§15.3), so this returns `Ok({}(…))`",
+                                    p
+                                ))
+                                .note("drop the wrapper and write the value; `throw e` or `e?` carries the error path")
+                                .note("`throws` says what this returns when it fails, and nothing about when it succeeds"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. `-> T?` whose tail constructs a bare `T`. An optional return is a verbatim `Option`
+        //    and gets no wrapping — only a `throws` body does. Restricted to the two forms that
+        //    certainly build a `T`: a struct literal and a unit-struct path.
+        if f.throws.is_none() {
+            if let Some(v) = value.as_deref().and_then(|v| v.strip_suffix('?')) {
+                let payload = v.trim();
+                let named = |p: &str| p == payload || p.rsplit("::").next() == Some(payload);
+                let bad = match e {
+                    Expr::StructLit { path, .. } => named(path),
+                    Expr::Path(p) => named(p),
+                    _ => false,
+                };
+                if bad {
+                    self.diags.push(
+                        Diag::error(f.line, 1, format!(
+                            "this returns `{}?`, which is `Option<{}>`, but the tail builds a bare `{}`",
+                            payload, payload, payload
+                        ))
+                        .note("an optional return is verbatim: write `Some(…)` or `None`")
+                        .note("only a `throws` body has its tail wrapped, and it wraps in `Ok` (§15.3)"),
+                    );
+                }
+            }
+        }
+    }
+
     fn lower_throws_body(&mut self, body: &Block, has_value: bool) {
         let n = body.stmts.len();
         for (i, s) in body.stmts.iter().enumerate() {

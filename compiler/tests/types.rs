@@ -100,3 +100,60 @@ fn an_inherent_impl_on_an_optional_alias_still_lowers() {
     assert!(rust.contains("impl Holder {"), "{}", rust);
     compiles(&rust).expect("the generated Rust must compile");
 }
+
+// ---- the value half of a signature -------------------------------------------
+//
+// `throws` says what a function returns when it fails and nothing about what it returns when it
+// succeeds. Four of the thirteen authoring errors in `examples/restdemo` were that one split,
+// one of them at seven sites in a single function, and Uredo diagnosed none of them: it lowered
+// `Ok(1)` to `Result::Ok(Ok(1))` and left rustc to report a type error against the signature
+// line. These check the two shapes that are decidable from the declaration alone.
+
+#[test]
+fn a_hand_written_ok_in_a_throws_body_is_diagnosed() {
+    let (ok, _rust, err) = lower("@derive(Debug)\nstruct E\n\nfn f() -> u32 throws E:\n    Ok(1)\n");
+    assert!(!ok, "this should not lower");
+    assert!(err.contains("wraps its tail in `Ok` for you"), "{}", err);
+    assert!(err.contains("§15.3"), "the diagnostic must name the rule:\n{}", err);
+}
+
+#[test]
+fn an_err_tail_is_diagnosed_the_same_way() {
+    let (ok, _rust, err) = lower("@derive(Debug)\nstruct E\n\nfn f() -> u32 throws E:\n    Err(E)\n");
+    assert!(!ok, "this should not lower");
+    assert!(err.contains("Ok(Err(…))"), "{}", err);
+}
+
+#[test]
+fn an_optional_return_whose_tail_builds_the_payload_is_diagnosed() {
+    for tail in ["P", "P { }"] {
+        let src = format!("struct P:\n    x: u8\n\nfn f() -> P?:\n    {}\n", tail.replace("{ }", "{ x: 1 }"));
+        let (ok, _rust, err) = lower(&src);
+        assert!(!ok, "`{}` should not lower", tail);
+        assert!(err.contains("which is `Option<P>`"), "{}", err);
+        assert!(err.contains("write `Some(…)` or `None`"), "{}", err);
+    }
+}
+
+#[test]
+fn the_shapes_that_are_correct_are_left_alone() {
+    // A value type that is itself a `Result` really does want `Ok(…)` as its tail.
+    let (ok, _r, err) = lower(
+        "@derive(Debug)\nstruct E\n\nfn f() -> Result<u32, u8> throws E:\n    Ok(1)\n",
+    );
+    assert!(ok, "a Result-valued `throws` may write `Ok`:\n{}", err);
+
+    // An optional return whose tail is an expression that yields one.
+    let (ok, _r, err) = lower(
+        "struct P:\n    x: u8\n\nfn f(v: Vec<P>) -> P?:\n    v.into_iter().next()\n",
+    );
+    assert!(ok, "an Option-yielding tail must not be flagged:\n{}", err);
+
+    // `None` is a path, and must not be mistaken for the payload.
+    let (ok, _r, err) = lower("struct P:\n    x: u8\n\nfn f() -> P?:\n    None\n");
+    assert!(ok, "`None` is a correct tail:\n{}", err);
+
+    // A correct `throws` body, which is the commonest shape in the repository.
+    let (ok, _r, err) = lower("@derive(Debug)\nstruct E\n\nfn f() -> u32 throws E:\n    1\n");
+    assert!(ok, "a plain value tail must not be flagged:\n{}", err);
+}

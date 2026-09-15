@@ -775,7 +775,39 @@ makes it a raw identifier — `gen` is `r#gen` to the debugger, because it is a 
 ## 17. Mistakes you will make
 
 These are not invented. They are the errors made while writing 1,786 lines of Uredo tooling, in the
-order of how often they came up (`tools/README.md` keeps the full list).
+order of how often they came up (`tools/README.md` keeps the full list), and thirteen more from
+writing `examples/restdemo` (its README keeps those).
+
+**Thinking `throws` says something about the value.** Four of the thirteen were this one, and one
+of them was made at seven sites in a single function. `throws` names what a function returns when
+it **fails**, and says nothing about what it returns when it succeeds.
+
+```uredo
+fn parse(text: str) -> u32 throws std::num::ParseIntError:
+    text.trim().parse()?          # the tail is wrapped in `Ok` for you (§15.3)
+```
+
+So writing `Ok(…)` yourself returns `Ok(Ok(…))`. Uredo says so now, rather than letting rustc
+report a type error against your signature line:
+
+```text
+error: a `throws` body wraps its tail in `Ok` for you (§15.3), so this returns `Ok(Ok(…))`
+    Ok(1)
+      ^
+  = drop the wrapper and write the value; `throw e` or `e?` carries the error path
+```
+
+The mirror image is an optional return, which is **not** wrapped for you — only a `throws` body
+is, and it wraps in `Ok`:
+
+```uredo
+fn first(items: take Vec<u32>) -> u32?:
+    items.into_iter().next()      # already an Option; `Some(…)` here would be wrong
+```
+
+Two more in the same family, which Uredo does not yet catch: `throws` with no `->` is a **unit**
+return, so a body that yields a value has it discarded; and a tail that is already a `Result`
+needs `?`, or it becomes `Ok(Result<…>)`.
 
 **Forgetting that arguments to Rust functions are Rust's.** By a wide margin the most common.
 
