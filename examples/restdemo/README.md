@@ -138,30 +138,45 @@ fixing because the code disagreed with the document, not because of what it save
 
 ### The benchmark against the twin
 
-`bench/run.sh`, committed, on this machine: `GET /items/1`, 32 keep-alive connections, 8-second
-runs, five repetitions, server pinned to eight cores and the load generator to the other eight.
+`bench/run.sh`, committed. `GET /items/1`, 32 keep-alive connections, 8-second runs, eight
+repetitions, server pinned to eight cores and the generator to the other eight, order reversed
+every repetition, session warm-up discarded.
 
 | | median rps | p50 | spread across runs |
 |---|---|---|---|
-| **Uredo** | **39,495** | ~740 µs | 8.6% |
-| **Rust twin** | **39,219** | ~750 µs | 7.4% |
+| **Uredo** | **140,404** | ~180 µs | 31.5% |
+| **Rust twin** | **136,722** | ~185 µs | 17.1% |
 
-**+0.7% for Uredo on medians, and 4 of 5 paired runs — which is a coin flip, not a result.** The
-control says why: the *same binary* run twice varies by 25.4%, and even the tighter within-side
-spreads are 7–9%. A 0.7% difference sits far inside both.
+**Median of the per-pair differences: +2.9% for Uredo, over a per-pair range of −33% to +10%, and
+6 of 8 paired runs.** The control is what that has to be read against: the *same binary* run twice
+varies by **31%**. Nothing here resolves a difference smaller than about ±10%.
 
-**That null result is the expected one and the one worth having.** Uredo has no runtime; §36
-retired the runtime budget because generated Rust performs like hand-written Rust. This is the
-first time that has been measured on a running program rather than argued from the lowering.
+**So: parity, to the resolution this machine allows** — which is what §36 predicts, since Uredo has
+no runtime and the generated Rust is what runs. The two binaries differ by 152 bytes and carry
+identical release profiles, which is the other reason to disbelieve any gap this measurement
+might have shown.
 
-The load generator is written here rather than taken off the shelf, so the measurement is
-reproducible from this repository and the generator's own ceiling sits beside the thing it
-measures. It reports a distribution because two servers within noise of each other is the
-expected outcome, and a single mean would hide it.
+#### A retraction
+
+An earlier version of this section reported **39,495 against 39,219 rps and called it parity. That
+measurement was of neither program.** Port 8080 was held by an unrelated admin service; both
+servers failed to bind with `Address already in use`, exited, and the load generator measured that
+service twice — serving 404s to a path it did not have. The script never checked that the thing
+answering was the thing under test.
+
+Three things came out of fixing it, and they are why the numbers above are worth more than the
+numbers they replace:
+
+- Both servers now take `RESTDEMO_ADDR`, and the benchmark picks a port nothing is using.
+- `identify()` refuses to time anything until `/health` answers `{"status":"ok"}` **and** the path
+  under test returns 200. A benchmark that cannot tell what it is measuring is not a benchmark.
+- The ordering was `ABAB`, and the machine ramps: across a session both sides climb monotonically
+  as frequency and caches warm, so the second binary always got the later, faster slot. That
+  showed up as a confident **−12.3%** which was entirely the ordering. It is `ABBA` now, and the
+  statistic is the median of per-pair differences rather than a difference of pooled medians.
 
 What this is **not**: a claim about any framework. The design permits exactly one other
-comparison — against a framework-shaped equivalent on identical routes, where a win would belong
-to fixed routing and borrowed parsing rather than to Uredo — and that one has not been run.
+comparison — against a framework-shaped equivalent on identical routes — and it has not been run.
 
 ## What it cost, and what that bought
 
