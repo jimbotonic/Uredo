@@ -1,0 +1,105 @@
+##! The types this service carries, and the proof that they are in the accepted set.
+
+use serde::{Deserialize, Serialize}
+
+use crate::error::Error
+use crate::field::{Field, Map}
+
+@derive(Debug, Serialize)
+pub struct Health:
+    pub status: String
+    pub items: u64
+
+@derive(Debug, Clone, Serialize, Deserialize, PartialEq)
+pub struct Item:
+    pub id: u64                  # unsigned
+    pub priority: i32            # signed
+    pub weight: f64              # float
+    pub name: String             # string
+    pub done: bool               # boolean
+    pub tag: String?             # an optional of an accepted type
+    pub labels: Vec<String>      # a list of one accepted type
+    pub meta: Map<String>        # a dictionary over one accepted type
+
+## What a client may send. `id` is the server's to assign, so it is absent — which is the
+## difference between this and `Item` and the reason for a second type.
+@derive(Debug, Deserialize)
+pub struct NewItem:
+    pub name: String
+    pub tag: String?
+    pub priority: i32?
+    pub weight: f64?
+    pub labels: Vec<String>?
+    pub meta: Map<String>?
+
+## A partial update: every field optional, absent means unchanged.
+@derive(Debug, Deserialize)
+pub struct ItemPatch:
+    pub name: String?
+    pub tag: String?
+    pub done: bool?
+    pub priority: i32?
+    pub weight: f64?
+    pub labels: Vec<String>?
+    pub meta: Map<String>?
+
+## The type set, enforced rather than described. Each call requires its argument's type to
+## implement `Field`, so a field outside the accepted set stops compiling here, naming the type
+## — which is the whole point of writing the set as a trait in `field.ure`.
+##
+## It is never called. `@rust(allow(dead_code))` would hide it; taking a reference in a `const`
+## would run it at compile time but needs the value. A plain function rustc type-checks is
+## enough, and `_` marks it as the assertion it is.
+fn _every_field_is_accepted(item: &Item):
+    fn accept<T: Field>(_value: &T):
+        ()                       # an empty body still needs a statement
+    accept(&item.id)
+    accept(&item.priority)
+    accept(&item.weight)
+    accept(&item.name)
+    accept(&item.done)
+    accept(&item.tag)
+    accept(&item.labels)
+    accept(&item.meta)
+
+impl NewItem:
+    ## The error type is spelled even though the crate declares a default: §15.1 forbids a bare
+    ## `throws` on a `pub` item, so a published signature always says what it returns.
+    pub fn validate(self) throws Error:
+        if self.name.is_empty():
+            throw Error::BadRequest(String::from("name must not be empty"))
+        if self.name.len() > 120:
+            throw Error::BadRequest(String::from("name is too long"))
+        if let Some(w) = self.weight:
+            if !w.is_finite():
+                throw Error::BadRequest(String::from("weight must be a finite number"))
+
+impl Item:
+    pub fn from_new(id: u64, new: take NewItem) -> Item:
+        Item {
+            id,
+            priority: new.priority.unwrap_or(0),
+            weight: new.weight.unwrap_or(0.0),
+            name: new.name,
+            done: false,
+            tag: new.tag,
+            labels: new.labels.unwrap_or_default(),
+            meta: new.meta.unwrap_or_default(),
+        }
+
+    ## Applying a patch: absent leaves the field alone.
+    pub fn apply(self: inout, patch: take ItemPatch):
+        if let Some(name) = patch.name:
+            self.name = name
+        if let Some(tag) = patch.tag:
+            self.tag = Some(tag)
+        if let Some(done) = patch.done:
+            self.done = done
+        if let Some(priority) = patch.priority:
+            self.priority = priority
+        if let Some(weight) = patch.weight:
+            self.weight = weight
+        if let Some(labels) = patch.labels:
+            self.labels = labels
+        if let Some(meta) = patch.meta:
+            self.meta = meta

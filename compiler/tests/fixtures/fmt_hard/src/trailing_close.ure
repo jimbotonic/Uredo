@@ -1,0 +1,25 @@
+## A multi-line `rust { }` block whose closing line also closes the call around it.
+##
+## The formatter emitted the covered lines of a raw token as placeholders, because the token
+## prints its own text — but the line it *ends* on can carry tokens after it. `})` became `}`,
+## and a program that compiled stopped parsing. Found by writing the REST demo, 2026-09-15.
+
+fn spawn_one(n: i32):
+    std::thread::spawn(rust {
+        move || {
+            ::std::println!("{}", n);
+        }
+    })
+
+fn nested(n: i32) -> i32:
+    values = Vec::from([rust {
+        {
+            let doubled = n * 2;
+            doubled + 1
+        }
+    }])
+    values[0]
+
+fn main():
+    spawn_one(1)
+    print("{}", nested(2))

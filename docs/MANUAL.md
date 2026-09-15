@@ -669,6 +669,37 @@ selects (D50). The consequence to know: two declarations of one item under diffe
 agree in their passing modes and receiver form, because the lowering reads declarations and cannot
 read your build configuration.
 
+### Declaring a macro
+
+`macro_rules!` is Rust's and works here, which matters whenever a set of items is repetitive
+enough that writing them out is worse than writing the rule:
+
+```uredo
+pub trait Field
+
+macro_rules! scalar_fields {
+    ($($t:ty),* $(,)?) => { $(impl Field for $t {})* };
+}
+
+scalar_fields!(u8, i64, f64, bool, String)
+
+fn accept<T: Field>(_value: &T):
+    ()
+
+fn main():
+    accept(&1u8)
+    accept(&String::from("x"))
+```
+
+**The body is Rust** — the same rule as every other macro (§22.5) — so what it generates is Rust
+items, not Uredo. That is right for the case above, where the output *is* a run of `impl` blocks.
+It also means a macro cannot factor out repeated **Uredo** syntax: there is no way to write one
+that emits `fn f(x: take T) -> U:` with an indented body, because by the time the macro is
+expanded there is no Uredo left to expand into.
+
+So reach for it when the repetition is item-shaped, and reach for a trait with a bound when it is
+behaviour-shaped. Most repetition in Uredo turns out to be the second kind.
+
 ---
 
 ## 15. The toolchain

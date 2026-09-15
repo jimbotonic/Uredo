@@ -64,6 +64,20 @@ fn collect_lines<'a>(src_lines: &[&'a str], toks: &[Token]) -> Vec<Line> {
             }
         }
     }
+    // The line a multi-line raw token *ends* on can carry tokens after it — `tokio::spawn(rust {
+    // … })` closes the block and the call on one line. Those tokens start on a covered line, and a
+    // covered line is emitted as a placeholder because the raw token prints its own text, so they
+    // were silently dropped and `})` became `}`. Move them onto the token's opening line, where
+    // they render straight after it.
+    let mut trailing: std::collections::BTreeMap<usize, usize> = Default::default();
+    for t in toks {
+        if let Tok::RustBlock(text) | Tok::MacroBody(text) | Tok::Str(text) = &t.tok {
+            let n = text.matches('\n').count();
+            if n > 0 {
+                trailing.insert(t.line + n, t.line);
+            }
+        }
+    }
     let mut pending_indents: i32 = 0;
     let mut by_line: std::collections::BTreeMap<usize, Vec<Token>> = Default::default();
     let mut indents_at: std::collections::BTreeMap<usize, i32> = Default::default();
@@ -73,11 +87,17 @@ fn collect_lines<'a>(src_lines: &[&'a str], toks: &[Token]) -> Vec<Line> {
             Tok::Dedent => pending_indents -= 1,
             Tok::Newline | Tok::Blank | Tok::Eof => {}
             _ => {
-                if !by_line.contains_key(&t.line) {
-                    indents_at.insert(t.line, pending_indents);
+                // a token that begins on the closing line of a multi-line raw token belongs to
+                // the logical line that opened it
+                let line = match trailing.get(&t.line) {
+                    Some(open) if !matches!(&t.tok, Tok::RustBlock(_) | Tok::MacroBody(_) | Tok::Str(_)) => *open,
+                    _ => t.line,
+                };
+                if !by_line.contains_key(&line) {
+                    indents_at.insert(line, pending_indents);
                     pending_indents = 0;
                 }
-                by_line.entry(t.line).or_default().push(t.clone());
+                by_line.entry(line).or_default().push(t.clone());
             }
         }
     }

@@ -1,0 +1,69 @@
+//! One error type for the whole service, and the status it maps to.
+
+use std::fmt;
+
+/// The whole error surface. A fixed set, like the type set — there is no `Other(Box<dyn Error>)`
+/// escape, because a service that cannot say what went wrong cannot map it to a status.
+#[derive(Debug)]
+pub enum Error {
+    NotFound,
+    BadRequest(String),
+    Conflict(String),
+    TooLarge,
+    Internal(String),
+}
+
+impl Error {
+    /// The status line this error becomes. Fixed at compile time: no table lookup, no boxing.
+    pub fn status(&self) -> u16 {
+        match self {
+            Error::NotFound => 404,
+            Error::BadRequest(_) => 400,
+            Error::Conflict(_) => 409,
+            Error::TooLarge => 413,
+            Error::Internal(_) => 500,
+        }
+    }
+
+    pub fn message(&self) -> &str {
+        match self {
+            Error::NotFound => "not found",
+            Error::BadRequest(m) => m,
+            Error::Conflict(m) => m,
+            Error::TooLarge => "payload too large",
+            Error::Internal(m) => m,
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.message(), self.status())
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Error {
+        Error::BadRequest(format!("malformed JSON: {e}"))
+    }
+}
+
+impl From<std::net::AddrParseError> for Error {
+    fn from(e: std::net::AddrParseError) -> Error {
+        Error::Internal(format!("bad listen address: {e}"))
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Error {
+        Error::Internal(format!("io: {e}"))
+    }
+}
+
+impl From<hyper::Error> for Error {
+    fn from(e: hyper::Error) -> Error {
+        Error::Internal(format!("http: {e}"))
+    }
+}

@@ -1788,6 +1788,17 @@ impl<'a> Parser<'a> {
             }
             Tok::Punct("::") => {
                 let path = self.parse_path()?;
+                // macro invocation through an absolute path: `::std::format!(…)`. The branch
+                // above does this for a relative path and this one did not, so a macro reached
+                // the way D39 spells one in generated code could not be written in source.
+                // Found by writing `examples/restdemo`, 2026-09-15.
+                if self.at_punct("!") {
+                    if let Tok::MacroBody(body) = self.peek_at(1).clone() {
+                        self.advance();
+                        self.advance();
+                        return Ok(Expr::Macro { path, body });
+                    }
+                }
                 if self.at_punct("{") {
                     return self.parse_struct_lit(path);
                 }

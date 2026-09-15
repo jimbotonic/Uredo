@@ -1,0 +1,41 @@
+##! The accepted type set, as a trait rather than a comment.
+##!
+##! An opinionated service says which types it carries. Saying it in prose means nothing checks
+##! it; saying it as a trait means a field the set does not cover will not compile, and the error
+##! names the type.
+##!
+##! The set: signed and unsigned integers, `f32`/`f64`, `String`, `bool`, and three composed
+##! forms — an optional, a list of one accepted type, and a dictionary keyed by `String` over
+##! one accepted type. Nothing else, and in particular nothing nested arbitrarily deep, because
+##! a fixed depth is what lets every body be one `from_slice` into a concrete type.
+
+use std::collections::BTreeMap
+
+use serde::Serialize
+use serde::de::DeserializeOwned
+
+## A dictionary. `BTreeMap` rather than `HashMap`: ordered output without a sort, and no hashing
+## per lookup on keys that are short.
+pub type Map<T> = BTreeMap<String, T>
+
+## Implemented for exactly the accepted types. The supertraits are what every one of them has to
+## provide for a body to be read and written; the trait itself adds nothing but membership.
+pub trait Field: Serialize + DeserializeOwned
+
+## Fourteen identical impls are what a macro is for, and Uredo has Rust's. The body of a
+## `macro_rules!` is Rust source (§22.5), which is exactly right here: what it generates *is*
+## Rust items. It could not generate Uredo syntax, which is the limit of this technique.
+macro_rules! scalar_fields {
+    ($($t:ty),* $(,)?) => { $(impl Field for $t {})* };
+}
+
+scalar_fields!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64, bool, String)
+
+## The composed forms, which take a bound and so are ordinary generic impls rather than macro
+## output. One level each, by design — `Vec<Vec<T>>` is accepted only because `Vec<T>` is itself
+## a field, which is the deepest this goes without a schema.
+impl<T: Field> Field for Vec<T>
+
+impl<T: Field> Field for Map<T>
+
+impl<T: Field> Field for T?

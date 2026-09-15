@@ -1,0 +1,97 @@
+##! Adding an endpoint, as small as it goes.
+##!
+##! An endpoint is a plain function over typed values — it never sees a request, a status or a
+##! byte. These adapters supply the HTTP: decode the body into the input type, call the function,
+##! encode the output. They are generic, so each one monomorphises at its call site: the
+##! dispatch stays a `match` over a compile-time route and nothing is boxed.
+##!
+##! The four shapes below are the whole vocabulary, which is what "dead simple" means here — a
+##! new endpoint is one function and one `match` arm.
+
+use bytes::Bytes
+use http_body_util::{BodyExt, Full}
+use hyper::body::Incoming
+use hyper::{Request, Response, StatusCode}
+use serde::Serialize
+use serde::de::DeserializeOwned
+
+use crate::error::Error
+use crate::etag
+
+## Every handler returns this. Naming it once turns four tokens into one at ten call sites, and
+## makes the shape of a handler legible: a response carrying a whole body in memory.
+pub type Reply = Response<Full<Bytes>>
+
+## A request body is read with a fixed ceiling: a service with a fixed type set has no business
+## accepting a body larger than its largest type.
+pub const MAX_BODY: usize = 64 * 1024
+
+## Body in, value out — `POST`, `PATCH`.
+pub async fn body_in<In: DeserializeOwned, Out: Serialize>(
+    req: take Request<Incoming>,
+    status: u16,
+    f: impl FnOnce(In) -> Result<Out, Error>,
+) -> Reply throws Error:
+    raw = read_body(req).await?
+    value: In = serde_json::from_slice(&raw)?
+    encoded(status, &f(value)?)?
+
+## Nothing in, value out — `GET`.
+pub fn value_out<Out: Serialize>(status: u16, f: impl FnOnce() -> Result<Out, Error>) -> Reply throws Error:
+    encoded(status, &f()?)?
+
+## The same, but the client may already hold it. The body is serialised, tagged, and then either
+## sent with its tag or dropped for a `304` — which is why the tag is computed over the encoded
+## bytes rather than the value: it is the representation that is being identified.
+pub fn value_out_cached<Out: Serialize>(
+    status: u16,
+    if_none_match: &str?,
+    f: impl FnOnce() -> Result<Out, Error>,
+) -> Reply throws Error:
+    body = serde_json::to_vec(&f()?)?
+    tag = etag::of(&body)
+    if let Some(offered) = if_none_match:
+        if etag::matches(offered, &tag):
+            return not_modified(&tag)
+    tagged(status, &body, &tag)
+
+## Nothing in, nothing out — `DELETE`.
+pub fn no_content(f: impl FnOnce() -> Result<(), Error>) -> Reply throws Error:
+    f()?
+    raw(204, b"")
+
+pub async fn read_body(req: take Request<Incoming>) -> Bytes throws Error:
+    collected = req.into_body().collect().await?
+    bytes = collected.to_bytes()
+    if bytes.len() > MAX_BODY:
+        throw Error::TooLarge
+    bytes
+
+fn encoded<T: Serialize>(status: u16, value: &T) -> Reply throws:
+    raw(status, &serde_json::to_vec(value)?)
+
+## A representation and its tag.
+fn tagged(status: u16, body: &[u8], tag: str) -> Reply:
+    Response::builder()
+        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+        .header("content-type", "application/json")
+        .header("etag", tag)
+        .body(Full::new(Bytes::copy_from_slice(body)))
+        .unwrap()
+
+## No body at all, which is the point of the whole exchange.
+fn not_modified(tag: str) -> Reply:
+    Response::builder()
+        .status(StatusCode::NOT_MODIFIED)
+        .header("etag", tag)
+        .body(Full::new(Bytes::new()))
+        .unwrap()
+
+## One response, one allocation: the body is copied once into `Bytes`, and the status is a
+## compile-time constant at every call site.
+pub fn raw(status: u16, body: &[u8]) -> Reply:
+    Response::builder()
+        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::copy_from_slice(body)))
+        .unwrap()

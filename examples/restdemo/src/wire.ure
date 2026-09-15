@@ -1,0 +1,71 @@
+##! Connection handling and dispatch.
+##!
+##! Every endpoint is one arm and one closure over typed values. The arm names a compile-time
+##! route and an adapter from `handler.ure`; nothing in the path is dynamic, and nothing here
+##! touches bytes except the adapters.
+
+use std::sync::Arc
+
+use hyper::body::Incoming
+use hyper::service::service_fn
+use hyper::Request
+use hyper_util::rt::TokioIo
+use tokio::net::TcpStream
+
+use crate::error::Error
+use crate::handler::{body_in, no_content, raw, value_out, value_out_cached, Reply}
+use crate::model::{Item, ItemPatch, NewItem}
+use crate::query::Query
+use crate::router::{resolve, Route}
+use crate::store::Store
+
+## Serve one connection. The `service_fn` plumbing is Rust: it needs an `async move` block per
+## request, and an async block is not Uredo syntax today (§38, held with D51). Everything the
+## block calls is Uredo.
+pub async fn connection(stream: take TcpStream, state: take Arc<Store>) throws Error:
+    io = TokioIo::new(stream)
+    service = rust {
+        service_fn(move |req: Request<Incoming>| {
+            let state = ::std::sync::Arc::clone(&state);
+            async move { crate::wire::respond(req, state).await }
+        })
+    }
+    hyper::server::conn::http1::Builder::new()
+        .serve_connection(io, service)
+        .await?
+
+## One request to one response. `service_fn` wants a future resolving to a `Result`, so this is
+## declared `throws` — but it never fails: a service error becomes a status here.
+pub async fn respond(req: take Request<Incoming>, state: take Arc<Store>) -> Reply throws Error:
+    match dispatch(req, state).await:
+        Ok(r): r
+        Err(e): raw(e.status(), format("{{\"error\":{:?}}}", e.message()).as_bytes())
+
+## The whole routing table. **Adding an endpoint is one arm here and one function it calls.**
+async fn dispatch(req: take Request<Incoming>, state: take Arc<Store>) -> Reply throws:
+    method = req.method().as_str().to_owned()
+    path = req.uri().path().to_owned()
+    let Some(found) = resolve(&method, &path) else:
+        throw Error::NotFound
+    ## Both borrow the request and neither outlives this match, so the GET arms pay nothing for
+    ## their query string or their `If-None-Match`.
+    raw_query = req.uri().query().unwrap_or("")
+    if_none_match = req.headers().get("if-none-match").and_then(v => v.to_str().ok())
+
+    match found:
+        Route::Health: value_out(200, () => Ok(state.health()))?
+        Route::ListItems:
+            filter = Query::parse(raw_query)?
+            value_out_cached(200, if_none_match, () => Ok(state.select(&filter)))?
+        Route::GetItem(id):
+            value_out_cached(200, if_none_match, () => state.get(id).ok_or(Error::NotFound))?
+        Route::DeleteItem(id): no_content(() => if state.delete(id): Ok(()) else: Err(Error::NotFound))?
+        Route::CreateItem:
+            body_in(req, 201, (new: NewItem) => create(&state, new)).await?
+        Route::PatchItem(id):
+            body_in(req, 200, (patch: ItemPatch) => state.patch(id, patch).ok_or(Error::NotFound)).await?
+
+## The one endpoint with logic of its own, so it is a function rather than a closure.
+fn create(state: &Arc<Store>, new: take NewItem) -> Result<Item, Error>:
+    new.validate()?
+    state.create(new)

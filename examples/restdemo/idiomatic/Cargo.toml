@@ -1,0 +1,33 @@
+[package]
+name = "restdemo_idiomatic"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "The idiomatic Rust twin of examples/restdemo, for the §37 comparison"
+
+[lib]
+name = "restdemo_idiomatic"
+path = "src/lib.rs"
+
+[[bin]]
+name = "restdemo_idiomatic"
+path = "src/main.rs"
+
+[dependencies]
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "time"] }
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "io-util", "time"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[workspace]

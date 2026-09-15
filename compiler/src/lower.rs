@@ -166,12 +166,21 @@ fn is_cfg_attr(a: &Attr) -> bool {
 pub struct CrateIndex {
     pub fns: HashMap<String, FnSig>,
     pub types: HashMap<String, TypeInfo>,
+    /// The crate root's `@!default_error`, which §15.1 says covers the whole subtree: its example
+    /// is annotated "crate root; a module may re-declare for its subtree". Each file was seeded
+    /// only from its own inner attributes, so a bare `throws` in any module but the root was
+    /// rejected — the spec's own example did not compile across a module boundary.
+    pub default_error: Option<String>,
 }
 
 impl CrateIndex {
     pub fn merge(&mut self, other: CrateIndex) {
         self.fns.extend(other.fns);
         self.types.extend(other.types);
+        // Only the root records one, and it is recorded once; whichever side has it, keep it.
+        if self.default_error.is_none() {
+            self.default_error = other.default_error;
+        }
     }
 }
 
@@ -182,6 +191,11 @@ pub fn index_module(m: &Module, prefix: &str) -> CrateIndex {
     l.prepass(&m.items);
     let key = |name: &str| if prefix.is_empty() { name.to_string() } else { format!("{}::{}", prefix, name) };
     let mut idx = CrateIndex::default();
+    // The crate root's declaration is a crate-wide fact, so it belongs in the index rather than
+    // in the file that happens to carry it.
+    if prefix.is_empty() {
+        idx.default_error = m.inner_attrs.iter().find(|a| a.name == "default_error").and_then(|a| a.args.clone());
+    }
     for (n, s) in l.fns {
         idx.fns.insert(key(&n), s);
     }
@@ -220,6 +234,13 @@ pub fn lower(m: &Module, src: &str) -> Lowered {
 pub fn lower_in_crate(m: &Module, src: &str, index: &CrateIndex, crate_name: &str, module_path: &str) -> Lowered {
     let mut l = Lowerer::new(src, index, crate_name);
     l.mod_path = module_path.split("::").filter(|s| !s.is_empty()).map(|s| s.to_string()).collect();
+    // A module's own declaration re-declares for its subtree; without one, the crate root's
+    // stands (§15.1). A crate *root* takes only its own: a package's lib and bin share one index,
+    // so `src/lib.ure` and `src/main.ure` are two roots behind it, and the library's default must
+    // not leak into the binary — where `crate::` names a different crate.
+    if !module_path.is_empty() {
+        l.default_error = index.default_error.clone();
+    }
     for a in &m.inner_attrs {
         if a.name == "default_error" {
             l.default_error = a.args.clone();
@@ -1367,12 +1388,17 @@ impl Lowerer {
                 return;
             }
         }
-        let header = match &i.trait_path {
-            Some(t) => format!("{}{}impl{} {} for {}{} {{", vis, unsafe_kw, g, t.trim(), i.self_ty.trim(), w),
-            None => format!("{}{}impl{} {}{} {{", vis, unsafe_kw, g, i.self_ty.trim(), w),
+        // The impl target is a type position like any other, so `T?` is `Option<T>` here too
+        // (§9.3). It was emitted verbatim, and `impl<T: Field> Field for T?` generated Rust that
+        // did not parse — found by writing `examples/restdemo`, 2026-09-15.
+        let self_ty = lower_type(i.self_ty.trim());
+        let trait_path = i.trait_path.as_ref().map(|t| lower_type(t.trim()));
+        let header = match &trait_path {
+            Some(t) => format!("{}{}impl{} {} for {}{} {{", vis, unsafe_kw, g, t, self_ty, w),
+            None => format!("{}{}impl{} {}{} {{", vis, unsafe_kw, g, self_ty, w),
         };
-        if let Some(t) = &i.trait_path {
-            self.api("pub", "impl", self.api_path(&format!("{} for {}", t.trim(), i.self_ty.trim())), header.trim_end_matches(" {").to_string(), vec![]);
+        if let Some(t) = &trait_path {
+            self.api("pub", "impl", self.api_path(&format!("{} for {}", t, self_ty)), header.trim_end_matches(" {").to_string(), vec![]);
         }
         if i.items.is_empty() {
             self.line(&format!("{}}}", header));
@@ -1563,7 +1589,9 @@ impl Lowerer {
                     }
                     StmtKind::Expr(e) if !has_value && is_block_like(e) => {
                         self.lower_stmt(s, BlockMode::Unit, false);
-                        self.line("::core::result::Result::Ok(())");
+                        if !loop_never_exits(e) {
+                            self.line("::core::result::Result::Ok(())");
+                        }
                         return;
                     }
                     StmtKind::Return(_) | StmtKind::Throw(_) => {
@@ -2861,6 +2889,43 @@ fn strip_markers(s: &str) -> String {
         out.push(c);
     }
     out
+}
+
+/// Does this `loop` have no way out?
+///
+/// A `throws` body ending in `loop { … }` with no `break` cannot fall through, so §15.3's
+/// `Ok(())` after it is unreachable and rustc says so. Hand-written Rust would let the loop be
+/// the tail — `loop` has type `!`, which coerces to the return type — and write nothing.
+///
+/// Deliberately conservative: any `break` anywhere inside, even one belonging to a nested loop,
+/// makes this `false` and the wrapping is emitted as before. A false negative costs the
+/// unreachable line that was always there; a false positive would drop a needed return.
+fn loop_never_exits(e: &Expr) -> bool {
+    fn block_has_break(b: &Block) -> bool {
+        b.stmts.iter().any(|s| match &s.kind {
+            StmtKind::Break { .. } => true,
+            StmtKind::While { body, .. } | StmtKind::WhileLet { body, .. } | StmtKind::For { body, .. } | StmtKind::Unsafe(body) => block_has_break(body),
+            StmtKind::Bind { else_block: Some(b), .. } => block_has_break(b),
+            StmtKind::Expr(e) => expr_has_break(e),
+            _ => false,
+        })
+    }
+    fn expr_has_break(e: &Expr) -> bool {
+        match e {
+            Expr::Loop { body, .. } | Expr::Block(body) | Expr::UnsafeBlock(body) => block_has_break(body),
+            Expr::If(i) => {
+                block_has_break(&i.then)
+                    || match &i.else_ {
+                        Some(ElseBranch::Else(b)) => block_has_break(b),
+                        Some(ElseBranch::ElseIf(n)) => expr_has_break(&Expr::If(n.clone())),
+                        None => false,
+                    }
+            }
+            Expr::Match { arms, .. } => arms.iter().any(|a| block_has_break(&a.body)),
+            _ => false,
+        }
+    }
+    matches!(e, Expr::Loop { body, .. } if !block_has_break(body))
 }
 
 fn is_block_like(e: &Expr) -> bool {

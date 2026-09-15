@@ -1,0 +1,12 @@
+## A module re-declares for its own subtree, overriding the root's.
+@!default_error(crate::grandchild::OwnError)
+
+@derive(Debug)
+pub struct OwnError
+
+impl From<std::num::ParseIntError> for OwnError:
+    fn from(_e: std::num::ParseIntError) -> OwnError:
+        OwnError
+
+fn overrides(x: str) -> u32 throws:
+    x.parse::<u32>()?

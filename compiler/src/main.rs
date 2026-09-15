@@ -490,6 +490,45 @@ fn bin_root(rel: &Path) -> bool {
 
 /// The module path of a file under `src/`, and the directory whose root file declares it —
 /// `None` when nothing declares it, which is every Cargo target root.
+/// The package a source file belongs to: the nearest ancestor with a `Cargo.toml` and a `src/`
+/// that contains the file.
+///
+/// Per-file commands used to compile each file with an empty index, which means none of them
+/// could see anything the rest of the crate declares — including a crate-root
+/// `@!default_error`, so `uredo lint` rejected a bare `throws` that `uredo check` accepts.
+fn package_of(file: &Path) -> Option<(PathBuf, String)> {
+    let abs = file.canonicalize().ok()?;
+    let mut dir = abs.parent()?.to_path_buf();
+    loop {
+        if dir.join("Cargo.toml").is_file() {
+            let src = dir.join("src");
+            if abs.starts_with(&src) {
+                let rel = abs.strip_prefix(&src).ok()?.to_path_buf();
+                return Some((dir, module_of(&rel).0));
+            }
+        }
+        dir = dir.parent()?.to_path_buf();
+    }
+}
+
+/// Every `.ure` declaration in a package, indexed under its module path (§20.3).
+fn index_package(dir: &Path) -> uredo::lower::CrateIndex {
+    let src_dir = dir.join("src");
+    let mut files = Vec::new();
+    collect(&src_dir, &mut files);
+    files.sort();
+    let mut index = uredo::lower::CrateIndex::default();
+    for f in &files {
+        if f.extension().map(|e| e != "ure").unwrap_or(true) {
+            continue;
+        }
+        if let (Ok(rel), Ok(text)) = (f.strip_prefix(&src_dir), fs::read_to_string(f)) {
+            index.merge(uredo::index_source(&text, &module_of(rel).0));
+        }
+    }
+    index
+}
+
 fn module_of(rel: &Path) -> (String, Option<PathBuf>) {
     let stem = rel.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     let parent = rel.parent().map(|p| p.to_path_buf()).unwrap_or_default();
@@ -1153,10 +1192,19 @@ fn cmd_lint(args: &[String]) {
     let mut d2_refs = 0usize;
     let mut own_refs = 0usize;
     let mut lifetimes = uredo::lint::Lifetimes::default();
+    // Each file is compiled against its own package's index, so a lint sees what a build sees.
+    let mut indexes: std::collections::HashMap<PathBuf, uredo::lower::CrateIndex> = Default::default();
     for f in &files {
         let name = f.display().to_string();
         let src = read(&name);
-        let out = uredo::compile(&src, false);
+        let out = match package_of(f) {
+            Some((pkg, module_path)) => {
+                let crate_name = package_name(&fs::read_to_string(pkg.join("Cargo.toml")).unwrap_or_default()).replace('-', "_");
+                let index = indexes.entry(pkg.clone()).or_insert_with(|| index_package(&pkg));
+                uredo::compile_in_crate(&src, false, index, &crate_name, &module_path)
+            }
+            None => uredo::compile(&src, false),
+        };
         if out.has_errors() {
             broken += 1;
             for d in out.diags.iter().filter(|d| d.level == uredo::diag::Level::Error) {

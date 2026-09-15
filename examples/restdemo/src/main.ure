@@ -1,0 +1,18 @@
+##! The binary: bind a listener and hand it to the library.
+
+use std::net::SocketAddr
+use std::sync::Arc
+
+use restdemo::error::Error
+use restdemo::store::Store
+use tokio::net::TcpListener
+
+## Multi-threaded on purpose and explicitly: the accept loop spawns a task per connection and
+## the store takes a read lock per GET, so concurrent reads run on separate workers rather than
+## queueing behind one. `worker_threads` is left to tokio, which uses the core count.
+@rust(tokio::main(flavor = "multi_thread"))
+async fn main() throws Error:
+    addr: SocketAddr = "127.0.0.1:8080".parse()?
+    listener = TcpListener::bind(addr).await?
+    print("restdemo listening on http://{addr}")
+    restdemo::serve(listener, Arc::new(Store::new())).await?

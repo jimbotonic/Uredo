@@ -1,0 +1,3 @@
+## No declaration here: the crate root's covers this subtree.
+fn inherits(x: str) -> u32 throws:
+    x.parse::<u32>()?

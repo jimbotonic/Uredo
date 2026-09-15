@@ -75,6 +75,15 @@ every *user* would inherit; under `.ure` it is merely unrecognised. §20.3, D61.
 It is the only form under which field punning, `..base`, foreign structs, struct variants and
 patterns are all decided by syntax alone. §12.1, §38.2.
 
+### "Can a macro generate Uredo code?"
+
+No — and `macro_rules!` itself works fine. You can declare and invoke one, and it is the right
+tool when a run of items is repetitive. But a macro body is **Rust** (§22.5), like every other
+macro's, so what it expands to is Rust items rather than Uredo: there is no way to write one that
+emits `fn f(x: take T) -> U:` with an indented body. Item-shaped repetition goes to a macro;
+behaviour-shaped repetition goes to a trait with a bound, and most of it turns out to be the
+second kind. §22.5.
+
 ### "Why is there no type engine? Half of this would be easier."
 
 Yes, and that is the trade. Without one, a public signature is computable from its own declaration,

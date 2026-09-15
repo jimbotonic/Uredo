@@ -1,0 +1,35 @@
+##! Routing as a `match`, decided at compile time.
+##!
+##! A framework resolves a route by walking a tree built at startup and handing back owned
+##! `String` captures. Here the path is split over the borrowed request bytes and matched as a
+##! slice pattern, so a resolved route holds one `i64` at most and allocates nothing. This is the
+##! mechanism the design note claims the speed comes from.
+
+## Every route this service has. Adding one is a variant and an arm, and the compiler then
+## refuses to let the dispatcher forget it.
+@derive(Debug, PartialEq)
+pub enum Route:
+    Health
+    ListItems
+    CreateItem
+    GetItem(u64)
+    PatchItem(u64)
+    DeleteItem(u64)
+
+## Resolve a method and path without allocating. `path` borrows the request line, and the
+## segments borrow `path`; nothing here outlives the call.
+pub fn resolve(method: str, path: str) -> Route?:
+    trimmed = path.trim_end_matches('/')
+    var parts = trimmed.split('/').filter(s => !s.is_empty())
+    first = parts.next()
+    second = parts.next()
+    if parts.next().is_some():
+        return None                      # nothing here is more than two segments deep
+    match (method, first, second):
+        ("GET", Some("health"), None): Some(Route::Health)
+        ("GET", Some("items"), None): Some(Route::ListItems)
+        ("POST", Some("items"), None): Some(Route::CreateItem)
+        ("GET", Some("items"), Some(id)): id.parse().ok().map(n => Route::GetItem(n))
+        ("PATCH", Some("items"), Some(id)): id.parse().ok().map(n => Route::PatchItem(n))
+        ("DELETE", Some("items"), Some(id)): id.parse().ok().map(n => Route::DeleteItem(n))
+        _: None

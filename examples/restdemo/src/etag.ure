@@ -1,0 +1,32 @@
+##! Entity tags, so a client that already has the answer does not receive it again.
+##!
+##! For a service whose claim is speed this is the largest real win available: the cheapest
+##! response is the one whose body is never written. A `304` carries no body at all.
+##!
+##! The hash is FNV-1a, written here rather than pulled in. It is not a cryptographic hash and
+##! does not need to be — an ETag identifies a representation, and a client that forges one only
+##! fools itself. Sixty-four bits over a JSON body that is at most a few kilobytes makes an
+##! accidental collision a non-event.
+
+const OFFSET: u64 = 0xcbf29ce484222325
+const PRIME: u64 = 0x100000001b3
+
+## The tag for a representation, quoted as HTTP wants it.
+pub fn of(body: &[u8]) -> String:
+    var hash = OFFSET
+    for byte in body:
+        hash ^= *byte as u64
+        hash = hash.wrapping_mul(PRIME)
+    format("\"{hash:016x}\"")
+
+## Does the client already hold this representation?
+##
+## `If-None-Match` may be a list — `"a", "b"` — or the wildcard `*`, which matches anything that
+## exists. Splitting on the comma and trimming is the whole of it; the values are compared
+## verbatim, since these tags are strong.
+pub fn matches(if_none_match: str, tag: str) -> bool:
+    for candidate in if_none_match.split(','):
+        trimmed = candidate.trim()
+        if trimmed == "*" || trimmed == tag:
+            return true
+    false

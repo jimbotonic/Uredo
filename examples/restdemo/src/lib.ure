@@ -1,0 +1,78 @@
+##! An opinionated JSON REST service: fixed routes, a fixed type set, no framework.
+##!
+##! The speed comes from the design, not from Uredo (§36): no dynamic router, no middleware
+##! stack, no boxed futures, and no allocation per path segment or query parameter. Uredo's part
+##! is only that it does not get in the way — see `examples/restdemo/DESIGN.md`.
+##!
+##! Everything lives in the library so `tests/api.ure` can drive the real server over a real
+##! socket; `src/main.ure` is a short binary over it.
+
+use std::net::SocketAddr
+use std::sync::Arc
+use std::sync::atomic::{AtomicUsize, Ordering}
+use std::time::{Duration, Instant}
+
+use tokio::net::{TcpListener, TcpStream}
+use tokio::sync::Notify
+
+pub mod error
+pub mod etag
+pub mod field
+pub mod handler
+pub mod model
+pub mod query
+pub mod router
+pub mod store
+pub mod wire
+
+use store::Store
+
+@!default_error(crate::error::Error)
+
+## How long a shutdown waits for in-flight requests before giving up on them.
+pub const DRAIN: Duration = Duration::from_secs(5)
+
+## Serve until the process is killed.
+pub async fn serve(listener: take TcpListener, state: take Arc<Store>) throws error::Error:
+    serve_until(listener, state, Arc::new(Notify::new())).await?
+
+## Serve until `shutdown` is notified, then stop accepting and let in-flight connections finish.
+##
+## A server that exits the moment it is signalled drops requests it had already accepted. This
+## one stops taking new connections, waits for the ones it has, and gives up after `DRAIN` —
+## which is a bound, not a promise, because a client that never finishes sending must not keep
+## the process alive.
+pub async fn serve_until(listener: take TcpListener, state: take Arc<Store>, shutdown: take Arc<Notify>) throws error::Error:
+    inflight = Arc::new(AtomicUsize::new(0))
+    loop:
+        ## `select!` is a macro, so its arms are Rust (§22.5). It is the only way to wait on the
+        ## next connection and the shutdown at once.
+        accepted: Option<Result<(TcpStream, SocketAddr), std::io::Error>> = rust {
+            {
+                ::tokio::select! {
+                    r = listener.accept() => Some(r),
+                    _ = shutdown.notified() => None,
+                }
+            }
+        }
+        let Some(result) = accepted else:
+            break
+        (stream, _peer) = result?
+        conn_state = Arc::clone(&state)
+        counter = Arc::clone(&inflight)
+        counter.fetch_add(1, Ordering::Relaxed)
+        tokio::spawn(rust {
+            async move {
+                if let Err(e) = crate::wire::connection(stream, conn_state).await {
+                    ::std::eprintln!("connection error: {e}");
+                }
+                counter.fetch_sub(1, ::std::sync::atomic::Ordering::Relaxed);
+            }
+        })
+    drain(&inflight).await?
+
+## Wait for the in-flight count to reach zero, or for `DRAIN` to pass.
+async fn drain(inflight: &Arc<AtomicUsize>) throws error::Error:
+    deadline = Instant::now() + DRAIN
+    while inflight.load(Ordering::Relaxed) > 0 && Instant::now() < deadline:
+        tokio::time::sleep(Duration::from_millis(5)).await

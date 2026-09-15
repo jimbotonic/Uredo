@@ -1,0 +1,63 @@
+##! Query parameters, parsed without allocating.
+##!
+##! Every field here **borrows the request's own bytes**. A framework hands back an owned
+##! `String` per parameter; this hands back a `&'a str` into the URI that is already in memory,
+##! so filtering a list costs no allocation at all beyond the response.
+##!
+##! It is also the shape the design note claims the speed comes from, and the shape no committed
+##! Uredo had ever used: a borrowed struct field was at **zero uses** across the whole project
+##! before this file.
+
+use crate::error::Error
+
+## What `GET /items` accepts. `'a` is the lifetime of the raw query string, which is the
+## request's, so nothing here outlives the call that parsed it.
+@derive(Debug, PartialEq)
+pub struct Query<'a>:
+    pub done: bool?
+    pub label: &'a str?
+    pub contains: &'a str?
+    pub limit: usize
+    pub offset: usize
+
+## The ceiling on a page. A fixed maximum is what keeps one client from asking for the whole
+## table; it is part of "opinionated" rather than a configuration knob.
+pub const MAX_LIMIT: usize = 200
+
+impl<'a> Query<'a>:
+    pub fn empty() -> Query<'a>:
+        Query { done: None, label: None, contains: None, limit: MAX_LIMIT, offset: 0 }
+
+    ## `done=true&label=urgent&limit=20&offset=40`. An unknown key is an error rather than a
+    ## shrug: a service that silently ignores `limti=20` returns the wrong page and says nothing.
+    pub fn parse(raw: &'a str) -> Query<'a> throws Error:
+        var q = Query::empty()
+        for pair in raw.split('&').filter(s => !s.is_empty()):
+            let Some((key, value)) = pair.split_once('=') else:
+                throw Error::BadRequest(format("query parameter {pair:?} has no value"))
+            ## An assignment cannot be an inline arm — it would read as a binding — so each of
+            ## these takes an indented block.
+            match key:
+                "done":
+                    q.done = Some(parse_bool(value)?)
+                "label":
+                    q.label = Some(value)
+                "contains":
+                    q.contains = Some(value)
+                "limit":
+                    q.limit = parse_usize(value, "limit")?.min(MAX_LIMIT)
+                "offset":
+                    q.offset = parse_usize(value, "offset")?
+                _: throw Error::BadRequest(format("unknown query parameter {key:?}"))
+        q
+
+fn parse_bool(value: str) -> bool throws:
+    match value:
+        "true": true
+        "false": false
+        _: throw Error::BadRequest(format("expected true or false, got {value:?}"))
+
+fn parse_usize(value: str, name: str) -> usize throws:
+    ## The tail of a `throws` body is wrapped in `Ok` (§15.3), so a tail that is already a
+    ## `Result` needs `?` — otherwise it is `Ok(Result<…>)`.
+    value.parse().map_err(_e => Error::BadRequest(format("{name} must be a whole number, got {value:?}")))?

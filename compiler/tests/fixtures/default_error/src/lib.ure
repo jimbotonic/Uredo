@@ -1,0 +1,16 @@
+##! §15.1: "crate root; a module may re-declare for its subtree".
+
+@!default_error(crate::RootError)
+
+pub mod child
+pub mod grandchild
+
+@derive(Debug)
+pub struct RootError
+
+impl From<std::num::ParseIntError> for RootError:
+    fn from(_e: std::num::ParseIntError) -> RootError:
+        RootError
+
+pub fn at_root(x: str) -> u32 throws crate::RootError:
+    x.parse::<u32>()?
