@@ -13,9 +13,10 @@ use hyper_util::rt::TokioIo
 use tokio::net::TcpStream
 
 use crate::error::Error
-use crate::handler::{body_in, no_content, raw, value_out, value_out_cached, Reply}
+use crate::handler::{body_in, no_content, raw, value_out, value_out_cached, Reply, Wants}
 use crate::model::{Item, ItemPatch, NewItem}
 use crate::query::Query
+use crate::repr::{Coding, Wire}
 use crate::router::{resolve, Route}
 use crate::store::Store
 
@@ -50,20 +51,28 @@ async fn dispatch(req: take Request<Incoming>, state: take Arc<Store>) -> Reply 
     ## Both borrow the request and neither outlives this match, so the GET arms pay nothing for
     ## their query string or their `If-None-Match`.
     raw_query = req.uri().query().unwrap_or("")
-    if_none_match = req.headers().get("if-none-match").and_then(v => v.to_str().ok())
+    wants = Wants {
+        wire: Wire::of(header(&req, "accept")),
+        coding: Coding::of(header(&req, "accept-encoding")),
+        if_none_match: header(&req, "if-none-match").map(s => s.to_string()),
+    }
 
     match found:
         Route::Health: value_out(200, () => Ok(state.health()))?
         Route::ListItems:
             filter = Query::parse(raw_query)?
-            value_out_cached(200, if_none_match, () => Ok(state.select(&filter)))?
+            value_out_cached(200, &wants, () => Ok(state.select(&filter)))?
         Route::GetItem(id):
-            value_out_cached(200, if_none_match, () => state.get(id).ok_or(Error::NotFound))?
+            value_out_cached(200, &wants, () => state.get(id).ok_or(Error::NotFound))?
         Route::DeleteItem(id): no_content(() => if state.delete(id): Ok(()) else: Err(Error::NotFound))?
         Route::CreateItem:
             body_in(req, 201, (new: NewItem) => create(&state, new)).await?
         Route::PatchItem(id):
             body_in(req, 200, (patch: ItemPatch) => state.patch(id, patch).ok_or(Error::NotFound)).await?
+
+## One request header, as a borrowed string.
+fn header<'a>(req: &'a Request<Incoming>, name: str) -> &'a str?:
+    req.headers().get(name).and_then(v => v.to_str().ok())
 
 ## The one endpoint with logic of its own, so it is a function rather than a closure.
 fn create(state: &Arc<Store>, new: take NewItem) -> Result<Item, Error>:

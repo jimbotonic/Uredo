@@ -1,0 +1,95 @@
+##! What goes on the wire, and how it is negotiated.
+##!
+##! Two choices, independent of each other, both opt-in and both driven by request headers:
+##!
+##! - **the shape**: keyed JSON, or the same values positionally with the field names dropped.
+##!   A service with a fixed type set already knows the field order, so repeating the names in
+##!   every element of every list is paying for a schema the client also has.
+##! - **the encoding**: identity, or brotli.
+##!
+##! Measured on this service's own payloads: one `Item` is 123 bytes keyed, 62 positional
+##! (−50%), and brotli does nothing to either because they are too small. A listing of fifty is
+##! 5,883 bytes keyed, 259 with brotli (−96%), and 183 positional with brotli (−97%). So the two
+##! matter at opposite ends — dropping names is what helps a small response, compression is what
+##! helps a large one — which is why both exist and neither is the default.
+
+use serde_json::Value
+
+use crate::field::Map
+use crate::model::{Health, Item}
+
+## Which shape the client asked for.
+@derive(Debug, Clone, Copy, PartialEq)
+pub enum Wire:
+    Keyed
+    Positional
+
+## Which content coding the client will accept.
+@derive(Debug, Clone, Copy, PartialEq)
+pub enum Coding:
+    Identity
+    Brotli
+
+## The media type that asks for the positional shape. A vendor type, because this is not a
+## standard format — the compact form is this service's schema, not an interchange one.
+pub const COMPACT: str = "application/vnd.restdemo.compact+json"
+
+impl Wire:
+    ## Content negotiation, kept to exactly what this service offers.
+    pub fn of(accept: &str?) -> Wire:
+        match accept:
+            Some(a) if a.contains(COMPACT): Wire::Positional
+            _: Wire::Keyed
+
+    pub fn content_type(self) -> str:
+        match self:
+            Wire::Keyed: "application/json"
+            Wire::Positional: COMPACT
+
+impl Coding:
+    pub fn of(accept_encoding: &str?) -> Coding:
+        match accept_encoding:
+            Some(a) if a.contains("br"): Coding::Brotli
+            _: Coding::Identity
+
+## A value that can drop its field names.
+##
+## The positional form is the declared field order and nothing else, so it is only meaningful
+## beside the type it came from — which is the trade the client accepts when it asks for it.
+pub trait Positional:
+    fn positional(self) -> Value
+
+impl Positional for Item:
+    fn positional(self) -> Value:
+        Value::Array(Vec::from([
+            self.id.into(),
+            self.priority.into(),
+            self.weight.into(),
+            Value::String(self.name.clone()),
+            self.done.into(),
+            optional_string(self.tag.as_ref()),
+            strings(&self.labels),
+            dictionary(&self.meta),
+        ]))
+
+impl Positional for Health:
+    fn positional(self) -> Value:
+        Value::Array(Vec::from([Value::String(self.status.clone()), self.items.into()]))
+
+impl<T: Positional> Positional for Vec<T>:
+    fn positional(self) -> Value:
+        Value::Array(self.iter().map(x => x.positional()).collect())
+
+## `&String?` is `Option<&String>` — a leading `&` binds tighter than the suffix (§9.3, D54) —
+## which is why the caller passes `.as_ref()` rather than `&`.
+fn optional_string(v: &String?) -> Value:
+    match v:
+        Some(s): Value::String(s.clone())
+        None: Value::Null
+
+fn strings(v: [String]) -> Value:
+    Value::Array(v.iter().map(s => Value::String(s.clone())).collect())
+
+fn dictionary(v: &Map<String>) -> Value:
+    ## A map iterator yields one 2-tuple, so the closure takes one parameter rather than two.
+    Value::Object(v.iter().map(kv => (kv.0.clone(), Value::String(kv.1.clone()))).collect())

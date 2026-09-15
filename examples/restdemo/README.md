@@ -88,6 +88,12 @@ Measured with the project's own tokenizer over library sources only, as the corp
 | non-whitespace characters | 12,227 | 12,749 | **−4.1%** | −8.1% |
 | — of which identifiers | 1,846 | 1,863 | **−0.9%** | |
 | — of which punctuation | 2,040 | 2,486 | **−17.9%** | |
+
+> **Stale as a whole-library figure.** Content negotiation was added to the Uredo side only, so
+> `repr`, `handler` and `wire` are no longer the same program on both sides and the totals above
+> predate it. Over the nine modules that *are* still equivalent — `error`, `etag`, `field`, `lib`,
+> `main`, `model`, `query`, `router`, `store` — the reading is **2,799 against 3,148 tokens,
+> −11.1%**, which is the same answer. The whole-library number returns when the twin is ported.
 | annotations | 79 | 84 | **−6.0%** | signature ratio 0.48 |
 | functions | 45 | 45 | 0.0% | — |
 
@@ -135,6 +141,35 @@ defect rather than a design question: **`@!default_error` never reached a child 
 §15.1 had always said a crate root's declaration covers its subtree. That is fixed, the demo now
 uses it, and it is worth **2 tokens** — which is the honest measure of this lever. It was worth
 fixing because the code disagreed with the document, not because of what it saves.
+
+### Two ways to send less
+
+Both opt-in, both driven by request headers, and they matter at opposite ends.
+
+**Dropping the field names.** `Accept: application/vnd.restdemo.compact+json` returns the same
+values positionally. A service with a fixed type set already knows the field order, so repeating
+the names in every element of every list is paying for a schema the client also has.
+
+**Brotli.** `Accept-Encoding: br`, above a 256-byte threshold — below that a brotli frame costs
+more than it saves, which is measured rather than assumed.
+
+Response bodies from the running server, in bytes:
+
+| | one item | listing of 50 |
+|---|---|---|
+| keyed JSON | 117 | 5,983 |
+| compact | **56** (−52%) | 2,933 (−51%) |
+| keyed + br | 117 (unchanged, under the threshold) | **258** (−96%) |
+| compact + br | **56** | **186** (−97%) |
+
+So: **dropping names is the whole win for a small response, compression is the whole win for a
+large one**, and neither is a default. A single item is too small for brotli to touch; a listing
+compresses to 4% of itself because the repeated field names are exactly what a compressor eats.
+
+Each representation carries **its own ETag**, computed over the bytes actually sent, and every
+response carries `Vary: accept, accept-encoding`. Without that a cache keyed on the URL alone
+would hand one client's shape to another — which is the part of content negotiation that is easy
+to ship broken, so there is a test for it.
 
 ### The benchmark against the twin
 

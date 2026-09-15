@@ -249,8 +249,15 @@ pub fn lower_in_crate(m: &Module, src: &str, index: &CrateIndex, crate_name: &st
             l.no_std = true;
         }
     }
-    l.prepass(&m.items);
+    // `resolve_uses` before `prepass`, and the order is load-bearing. `prepass` records each
+    // function's parameter modes, and a mode depends on whether the type is known-`Copy`
+    // (§10.1) — which for an imported type is only known once the `use` has been resolved
+    // against the crate index. Run the other way round, a `@derive(Copy)` type from another
+    // module was recorded P3 at prepass and lowered P1 in the signature, so the declaration took
+    // it by value and every call site in the same file inserted a borrow. `prepass` still uses
+    // `insert` for its own declarations, so a local one shadows an import exactly as before.
     l.resolve_uses(&m.items);
+    l.prepass(&m.items);
     l.check_module_alternates(&m.items);
     l.lower_module(m);
     l.finish()
