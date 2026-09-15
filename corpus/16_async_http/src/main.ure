@@ -1,0 +1,35 @@
+##! 16. Async HTTP request: a local HTTP/1.0 server task and a client that GETs from it (offline).
+
+use tokio::io::{AsyncReadExt, AsyncWriteExt}
+use tokio::net::{TcpListener, TcpStream}
+
+@!default_error(std::io::Error)
+
+async fn serve_one(listener: take TcpListener) throws:        # the task owns the listener
+    (stream, _) = listener.accept().await?
+    var socket = stream
+    var buf = vec![0u8; 1024]
+    n = socket.read(&mut buf).await?
+    request = String::from_utf8_lossy(&buf[..n])
+    body = if request.starts_with("GET /hello"): "hello from uredo" else: "not found"
+    status = if request.starts_with("GET /hello"): "200 OK" else: "404 Not Found"
+    response = format("HTTP/1.0 {status}\r\nContent-Length: {}\r\n\r\n{body}", body.len())
+    socket.write_all(response.as_bytes()).await?
+
+async fn get(addr: str, path: str) -> (u16, String) throws:
+    var stream = TcpStream::connect(addr).await?
+    stream.write_all(format("GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n").as_bytes()).await?
+    var raw = String::new()
+    stream.read_to_string(&mut raw).await?
+    status: u16 = raw.split(' ').nth(1).and_then(s => s.parse().ok()).unwrap_or(0)
+    body = raw.split("\r\n\r\n").nth(1).unwrap_or("").to_string()
+    (status, body)
+
+@rust(tokio::main(flavor = "current_thread"))
+async fn main() throws:
+    listener = TcpListener::bind("127.0.0.1:0").await?
+    addr = listener.local_addr()?.to_string()
+    server = tokio::spawn(serve_one(listener))
+    (status, body) = get(addr, "/hello").await?
+    print("{status} {body}")
+    server.await.expect("server task")?

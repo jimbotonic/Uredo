@@ -1,0 +1,46 @@
+##! 9. Error propagation: an enum error type with `From` impls, `?` through layers, `throw`.
+
+use std::num::ParseIntError
+
+@derive(Debug)
+enum ConfigError:
+    Parse(ParseIntError)
+    Missing(String)
+    Range { key: String, value: i64 }
+
+    impl std::fmt::Display:
+        fn fmt(self, f: inout std::fmt::Formatter<'_>) -> std::fmt::Result:
+            match self:
+                Parse(e): write!(f, "bad number: {e}")
+                Missing(key): write!(f, "missing key {key:?}")
+                Range { key, value }: write!(f, "{key} out of range: {value}")
+
+impl From<ParseIntError> for ConfigError:
+    fn from(e: ParseIntError) -> Self: ConfigError::Parse(e)         # `From::from` takes its argument by value (D53)
+
+@!default_error(ConfigError)
+
+fn lookup(pairs: [(&str, &str)], key: str) -> String throws:
+    for (k, v) in pairs:
+        if *k == key:
+            return v.to_string()
+    throw ConfigError::Missing(key.to_string())
+
+fn port(pairs: [(&str, &str)]) -> u16 throws:
+    raw = lookup(pairs, "port")?
+    value: i64 = raw.trim().parse()?
+    if value < 1 || value > 65535:
+        throw ConfigError::Range { key: String::from("port"), value }
+    value as u16
+
+fn main():
+    configs = [
+        [("host", "localhost"), ("port", "8080")],
+        [("host", "localhost"), ("port", "eighty")],
+        [("host", "localhost"), ("port", "70000")],
+        [("host", "localhost"), ("timeout", "3")],
+    ]
+    for pairs in configs:
+        match port(pairs):
+            Ok(p): print("port {p}")
+            Err(e): print("error: {e}")

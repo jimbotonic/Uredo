@@ -1,0 +1,52 @@
+##! 17 — Smart pointers: `Box`, `Rc`, `RefCell`, `Arc`. Every one is spelled, because each
+##! is a cost: heap allocation, reference counting, runtime borrow checks (§3.2).
+
+use std::rc::Rc
+use std::cell::RefCell
+use std::sync::Arc
+
+## Recursive data needs indirection: `Box` puts the tail on the heap.
+@derive(Debug)
+enum List:
+    Cons(i32, Box<List>)
+    Nil
+
+    fn sum(self) -> i32:
+        match *self:
+            Cons(v, ref rest): v + rest.sum()        # Rust's `ref` binding, exactly as Rust
+            Nil: 0
+
+## Shared ownership with interior mutability: `Rc<RefCell<T>>`. The borrow checks happen at
+## runtime and can panic; the types say so at every use.
+@derive(Debug)
+struct Node:
+    name: String
+    children: Vec<Rc<RefCell<Node>>>
+
+fn add_child(parent: Rc<RefCell<Node>>, name: str):      # parent: &Rc<RefCell<Node>> (P3)
+    child = Rc::new(RefCell::new(Node { name: name.to_string(), children: Vec::new() }))
+    parent.borrow_mut().children.push(child)           # `borrow_mut` is a runtime check, visible
+
+fn count(node: Rc<RefCell<Node>>) -> usize:
+    n = node.borrow()
+    print("visit {}", n.name)
+    1 + n.children.iter().map(c => count(c)).sum::<usize>()
+
+fn main():
+    list = List::Cons(1, Box::new(List::Cons(2, Box::new(List::Cons(3, Box::new(List::Nil))))))
+    print("{}", list.sum())
+
+    root = Rc::new(RefCell::new(Node { name: String::from("root"), children: Vec::new() }))
+    add_child(root, "a")
+    add_child(root, "b")
+    add_child(root.borrow().children[0].clone(), "a1")   # cloning an Rc bumps a counter: `.clone()` is written
+    print("nodes {} strong refs to root {}", count(root), Rc::strong_count(&root))
+
+    # `Arc` is the thread-safe counterpart; the atomic increments are its cost.
+    shared = Arc::new(String::from("shared"))
+    handles: Vec<Arc<String>> = (0..3).map(_ => Arc::clone(&shared)).collect()
+    print("{} refs, value {}", Arc::strong_count(&shared), handles[0])
+
+    # `Box<dyn Trait>` for a heterogeneous, owned collection (see 14); `Deref` makes `*b` work.
+    b = Box::new(41)
+    print("{}", *b + 1)

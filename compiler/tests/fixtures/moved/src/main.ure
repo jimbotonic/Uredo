@@ -1,0 +1,23 @@
+##! Negative fixture: two ownership errors only rustc can find, translated back to Uredo (§27).
+
+@derive(Debug)
+struct Job:
+    id: u32
+    payload: String
+
+    fn bump(self: inout):
+        self.id += 1
+
+fn enqueue(job: take Job) -> Vec<Job>:
+    Vec::from([job])
+
+fn describe(job: Job) -> String:
+    format("job {}", job.id)
+
+fn main():
+    job = Job { id: 1, payload: String::from("x") }
+    queue = enqueue(job)
+    print(job.id)                    # E0382: used after `enqueue` took ownership
+    other = Job { id: 2, payload: String::from("y") }
+    other.bump()                     # E0596: `other` is not `var` but `bump` takes `self: inout`
+    print("{} {}", queue.len(), describe(other))

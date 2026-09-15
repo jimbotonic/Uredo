@@ -1,0 +1,40 @@
+##! §36 tail-`?` fixture: with the same error type, a tail `e?` in a `throws` function (§15.3, D37)
+##! must be emitted as the hand-written direct return in `../../tail_rust/src/lib.rs`; with a
+##! converting error type it must use no more instructions than the `Ok(e?)` form that rule replaced.
+##! The error payload is 32 bytes, the size at which the round-trip study found `Ok(e?)` leaving a
+##! stack temporary and a `memcpy` (`corpus-study/roundtrip/README.md`, G1).
+
+@derive(Debug)
+@allow(dead_code)                            # the payload exists to be 32 bytes wide
+pub struct BigError:
+    code: u64
+    a: u64
+    b: u64
+    c: u64
+
+@derive(Debug)
+@allow(dead_code)                            # the payload is carried, never read here
+pub struct OuterError:
+    inner: BigError
+
+impl From<BigError> for OuterError:
+    fn from(e: BigError) -> Self:
+        OuterError { inner: e }
+
+rust {
+    const _: () = assert!(::core::mem::size_of::<BigError>() == 32);
+}
+
+## Opaque to the optimiser, so the tail lowering is what the comparison sees.
+@inline(never)
+pub fn inner(n: u64) -> u64 throws BigError:
+    if n == 0: throw BigError { code: 1, a: 2, b: 3, c: 4 }
+    n * 2
+
+## The same error type: the tail `?` must cost nothing over returning `inner(n)` directly.
+pub fn archive(n: u64) -> u64 throws BigError:
+    inner(n)?
+
+## A converting error type: `From` runs, and this must not be worse than `Ok(inner(n)?)`.
+pub fn convert(n: u64) -> u64 throws OuterError:
+    inner(n)?

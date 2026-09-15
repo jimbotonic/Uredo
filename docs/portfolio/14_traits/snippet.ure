@@ -1,0 +1,70 @@
+##! 14 — Traits: definitions with default methods, implementations, static dispatch,
+##! trait objects (`dyn`, boxed and borrowed), `impl Trait` returns, std traits.
+
+## A trait declaration. Signatures have no body, so receivers and types are written out.
+trait Shape:
+    fn area(self) -> f64
+    fn name(self) -> String
+    ## A default method: implementors may override it.
+    fn describe(self) -> String:
+        format("{} with area {:.2}", self.name(), self.area())
+
+@derive(Debug, Clone, Copy)
+struct Circle:
+    r: f64
+
+    impl Shape:
+        fn area(self) -> f64: std::f64::consts::PI * r * r
+        fn name(self) -> String: String::from("circle")
+
+@derive(Debug, Clone, Copy)
+struct Square:
+    side: f64
+
+    impl Shape:
+        fn area(self) -> f64: side * side
+        fn name(self) -> String: String::from("square")
+        fn describe(self) -> String: format("a {}-unit square", side)     # override
+
+## Static dispatch: monomorphised per concrete type. `T` passes by value (P8): a non-Copy
+## argument is moved, so the shapes below are `@derive(Copy)` or are not used again.
+fn print_static<T: Shape>(shape: T):
+    print("static: {}", shape.describe())
+
+## Dynamic dispatch: `dyn Trait` is written, a vtable is used, nothing is hidden.
+fn print_dyn(shape: &dyn Shape):
+    print("dyn: {}", shape.describe())
+
+## Returning `impl Trait`: the concrete type is hidden from the caller, not from the compiler.
+fn unit_square() -> impl Shape:
+    Square { side: 1.0 }
+
+## Standard traits work the same way; `Default` and `PartialOrd` are derived or written.
+@derive(Debug, Default, PartialEq, PartialOrd)
+struct Version:
+    major: u32
+    minor: u32
+
+    impl std::str::FromStr:
+        type Err = String                        # associated types use Rust syntax (§19)
+        fn from_str(s: str) -> Self throws String:
+            (a, b) = s.split_once('.').ok_or(String::from("expected a.b"))?
+            major = a.parse::<u32>().map_err(e => e.to_string())?
+            minor = b.parse::<u32>().map_err(e => e.to_string())?
+            Self { major, minor }
+
+fn main():
+    c = Circle { r: 1.0 }
+    s = Square { side: 2.0 }
+    print_static(c)
+    print_static(s)
+    print_dyn(&c)                                         # `&dyn` is an explicit-reference param: write the `&`
+    # A heterogeneous list needs boxing: `Box<dyn Shape>` is spelled, so is `Box::new`.
+    shapes: Vec<Box<dyn Shape>> = Vec::from([Box::new(c) as Box<dyn Shape>, Box::new(s)])
+    for sh in shapes:
+        print("{}", sh.describe())
+    print("{}", unit_square().describe())
+
+    v: Version = "1.4".parse().unwrap()
+    print("{v:?} newer than default: {}", v > Version::default())
+    print("{:?}", "oops".parse::<Version>())

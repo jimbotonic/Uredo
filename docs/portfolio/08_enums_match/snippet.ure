@@ -1,0 +1,56 @@
+##! 08 — Enums and pattern matching: algebraic data, exhaustiveness, guards,
+##! `if let`, `while let`, `let-else`.
+
+@derive(Debug, Clone, PartialEq)
+enum Shape:
+    Dot                                     # unit variant
+    Circle(f64)                             # tuple variant
+    Rect { w: f64, h: f64 }                 # struct variant (Rust spelling, D21)
+
+    ## Methods and trait impls may live in the enum body too (D45).
+    fn area(self) -> f64:
+        # On a scrutinee whose type Uredo knows, variant names may be bare (§13.1).
+        match *self:
+            Dot: 0.0
+            Circle(r): std::f64::consts::PI * r * r
+            Rect { w, h }: w * h
+
+@derive(Debug)
+enum Command:
+    Quit
+    Say(String)
+    Move { dx: i32, dy: i32 }
+
+## `match` must be exhaustive; `_` is the catch-all. Guards are `pattern if cond:`.
+fn run(cmd: Command) -> String:
+    match cmd:
+        Command::Quit: String::from("bye")
+        Command::Say(text) if text.is_empty(): String::from("(silence)")
+        Command::Say(text): format("says {text}")
+        Command::Move { dx: 0, dy: 0 }: String::from("stays")
+        Command::Move { dx, dy }: format("moves by ({dx}, {dy})")
+
+fn main():
+    shapes = Vec::from([Shape::Dot, Shape::Circle(1.0), Shape::Rect { w: 2.0, h: 3.0 }])
+    for s in shapes:                                     # borrows: `for s in &shapes`
+        print("{s:?} -> {:.2}", s.area())
+
+    for c in [Command::Quit, Command::Say(String::new()), Command::Move { dx: 1, dy: -1 }]:
+        print(run(c))
+
+    # `if let` and `while let` are Rust's (§14). Matching a place by value moves; `&x` borrows.
+    maybe = Some(Shape::Circle(2.0))
+    if let Some(Shape::Circle(r)) = &maybe:
+        print("radius {r}")
+
+    var stack = Vec::from([1, 2, 3])
+    while let Some(top) = stack.pop():
+        print("pop {top}")
+
+    # `let-else` for the refutable case: the else block must diverge (D32).
+    let Some(first) = shapes.first() else:
+        return
+    print("first is {first:?}")
+
+    # `matches!` is a Rust macro, invoked directly (D23).
+    print("{}", matches!(shapes[1], Shape::Circle(r) if r > 0.5))

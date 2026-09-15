@@ -1,0 +1,7 @@
+##! Negative fixture (§16): a binding that holds an iterator is a place, so the `for` rule
+##! borrows it; `take` is the fix, and the diagnostic says so.
+
+fn main():
+    r = 0..3
+    for i in r:
+        print("{i}")

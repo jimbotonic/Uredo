@@ -1,0 +1,42 @@
+##! 11 — Collections: `Vec`, `HashMap`, `HashSet`, the entry API, and the three
+##! ways a `for` loop can visit a collection.
+
+use std::collections::{HashMap, HashSet}
+
+fn main():
+    # Every collection is an allocation and is spelled as one.
+    var words: Vec<String> = Vec::new()
+    for w in "the quick brown fox jumps over the lazy dog the end".split(' '):
+        words.push(w.to_string())               # `push` on a `var` binding: Rust's auto-ref
+
+    # `for x in place` borrows (`&place`); `inout` borrows mutably; `take` consumes (D12).
+    for w in words:                             # w: &String
+        if w.len() > 4: print("long: {w}")
+    for w in inout words:                       # w: &mut String
+        w.make_ascii_uppercase()
+    print("{words:?}")
+
+    # HashMap with the entry API: counting words. `entry` returns an owned handle; `*x += 1`
+    # dereferences exactly as in Rust.
+    var counts: HashMap<String, usize> = HashMap::new()
+    for w in words:
+        *counts.entry(w.clone()).or_insert(0) += 1
+    var pairs: Vec<(String, usize)> = counts.into_iter().collect()   # consumes the map
+    pairs.sort()                                # sort in place: `pairs` is `var`
+    print("{pairs:?}")
+
+    # HashSet for membership; `contains` takes `&T`, and since HashSet::contains is a Rust
+    # item you write the borrow (D2).
+    var seen: HashSet<u32> = HashSet::new()
+    for n in [3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5]:
+        if !seen.insert(n): print("duplicate {n}")
+    print("{}", seen.contains(&9))
+
+    # Consuming iteration: `take` moves the elements out; `words` is gone afterwards.
+    var lengths = Vec::new()
+    for w in take words:
+        lengths.push(w.len())
+    lengths.sort_unstable()
+    lengths.dedup()
+    print("{lengths:?}")
+    # print("{words:?}")                        # error: `words` was moved by `for … in take words`

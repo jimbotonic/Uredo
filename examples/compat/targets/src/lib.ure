@@ -1,0 +1,20 @@
+##! §35 compatibility entry: **the four Cargo target kinds**, and rebuilding after an edit.
+##! This package is a library and a binary, with an integration test and an example beside them.
+##! Each file under `tests/` and `examples/` is its own target, compiled against this library by
+##! name, so nothing here is a module of it.
+
+## Joins two words the way the crate's users expect.
+pub fn join(a: str, b: str) -> String:
+    format("{a}-{b}")
+
+@cfg(feature = "loud")
+pub fn shout(a: str) -> String:
+    a.to_uppercase()
+
+@cfg(not(feature = "loud"))
+pub fn shout(a: str) -> String:
+    a.to_string()
+
+@test
+fn join_works():
+    assert_eq!(join("a", "b"), "a-b")

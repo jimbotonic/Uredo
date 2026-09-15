@@ -1,0 +1,515 @@
+##! The §43 corpus runner: for every program, run the Uredo version and the idiomatic Rust twin,
+##! compare their output, and compute the §37 metrics; write RESULTS.md and results.json.
+##!
+##! usage: corpus-run   (from the repository root; needs the compiler built in
+##! compiler/target/debug and the analyzer tools in docs/corpus-study/analyzer/target/release)
+
+use std::collections::BTreeMap
+use std::fs
+use std::path::{Path, PathBuf}
+use std::process::Command
+use serde::Serialize
+use regex::Regex
+
+## The four §37 thresholds, set from the corpus study and revisable only upward.
+const TOKEN_THRESHOLD: f64 = 10.0
+const ANNOTATION_THRESHOLD: f64 = 0.5
+const HIT_THRESHOLD: f64 = 90.0
+const MAPPED_THRESHOLD: f64 = 80.0
+
+## What `metrics.py` reports, for one file, in the order it is written to `results.json`.
+@derive(Serialize, Clone)
+struct Metrics:
+    lines: u64
+    nonws_chars: u64
+    tokens: u64
+    annotations: u64
+    fns: u64
+
+@derive(Serialize)
+struct Program:
+    program: String
+    same_output: bool
+    uredo_rc: i32
+    rust_rc: i32
+    ure: Metrics
+    rust: Metrics
+    generated: Metrics?
+    token_reduction_pct: f64
+    char_reduction_pct: f64
+    line_reduction_pct: f64
+    annotations_ure: u64
+    annotations_rust: u64
+    sig_annotations_ure: u64
+    sig_annotations_rust: u64
+    hit: u64
+    params: u64
+    misses: Vec<String>
+    raw_rust_lines: u64
+    source_lines: u64
+    stderr_head: String
+
+@derive(Serialize)
+struct Summary:
+    programs: usize
+    all_same_output: bool
+    tokens_ure: u64
+    tokens_rust: u64
+    token_reduction_pct: f64
+    token_reduction_app_pct: f64
+    chars_ure: u64
+    chars_rust: u64
+    char_reduction_pct: f64
+    lines_ure: u64
+    lines_rust: u64
+    line_reduction_pct: f64
+    annotations_ure: u64
+    annotations_rust: u64
+    annotation_ratio: f64
+    sig_annotations_ure: u64
+    sig_annotations_rust: u64
+    sig_annotation_ratio: f64?
+    hit: u64
+    params: u64
+    hit_rate_pct: f64?
+    diagnostics_mapped: u64
+    diagnostics_total: u64
+    mapped_pct: f64?
+    raw_rust_lines: u64
+    source_lines: u64
+    raw_rust_share_pct: f64
+
+## The four checks, keyed by the sentence each one states.
+@derive(Serialize)
+struct Checks:
+    @serde(rename = "token reduction ≥ 10% on application-style programs (1–15)")
+    tokens: bool
+    @serde(rename = "parameter annotations ≤ ½ of idiomatic Rust's (signatures)")
+    annotations: bool
+    @serde(rename = "inference hit rate ≥ 90% on non-generic parameters")
+    hit_rate: bool
+    @serde(rename = "≥ 80% of barrier diagnostics mapped")
+    mapped: bool
+
+@derive(Serialize)
+struct Results:
+    summary: Summary
+    checks: Checks
+    programs: Vec<Program>
+
+## Python's `round(x, 1)`: half to even, so that a re-run of either tool writes the same file.
+fn round1(x: f64) -> f64:
+    scaled = x * 10.0
+    nearest = scaled.round()
+    var r = nearest
+    if (scaled - scaled.trunc()).abs() == 0.5:
+        r = 2.0 *(scaled / 2.0).round()
+    r / 10.0
+
+fn round3(x: f64) -> f64:
+    scaled = x * 1000.0
+    var r = scaled.round()
+    if (scaled - scaled.trunc()).abs() == 0.5:
+        r = 2.0 *(scaled / 2.0).round()
+    r / 1000.0
+
+struct Run:
+    code: i32
+    out: String
+    err: String
+
+fn run(program: &Path, args: [String], cwd: &Path?, corpus_target: &Path) -> Run:
+    var cmd = Command::new(program)
+    cmd.args(args).env("CARGO_TARGET_DIR", corpus_target)
+    if let Some(d) = cwd:
+        cmd.current_dir(d)
+    output = cmd.output().expect("run the subprocess")
+    Run {
+        code: output.status.code().unwrap_or(-1),
+        out: String::from_utf8_lossy(&output.stdout).to_string(),
+        err: String::from_utf8_lossy(&output.stderr).to_string(),
+    }
+
+fn args_of(items: [&str]) -> Vec<String>:
+    items.iter().map(s => s.to_string()).collect()
+
+fn metrics(tool: &Path, path: &Path, corpus_target: &Path) -> Metrics:
+    r = run(Path::new("python3"), Vec::from([tool.display().to_string(), path.display().to_string()]), None, corpus_target)
+    rows: Vec<&str> = r.out.trim().lines().collect()
+    head: Vec<&str> = rows[0].split('\t').collect()
+    vals: Vec<&str> = rows[1].split('\t').collect()
+    var m: BTreeMap<&str, u64> = BTreeMap::new()
+    for (k, v) in head.iter().zip(vals.iter()):
+        if let Ok(n) = v.parse::<u64>():
+            m.insert(k, n)
+    field = key => *m.get(key).unwrap_or(&0)
+    Metrics {
+        lines: field("lines"),
+        nonws_chars: field("nonws_chars"),
+        tokens: field("tokens"),
+        annotations: field("annotations"),
+        fns: field("fns"),
+    }
+
+## `paramshape`'s table: the shape of every parameter, and whether its type is generic.
+fn shapes(tool: &Path, path: &Path, corpus_target: &Path) -> BTreeMap<(String, u32), (String, bool)>:
+    r = run(tool, Vec::from([path.display().to_string()]), None, corpus_target)
+    var out = BTreeMap::new()
+    for line in r.out.lines():
+        parts: Vec<&str> = line.split('\t').collect()
+        if parts.len() == 4:
+            out.insert((parts[0].to_string(), parts[1].parse().unwrap_or(0)), (parts[2].to_string(), parts[3] == "1"))
+    out
+
+## §37's *parameter* annotations: `take`, `inout`, `&`, `var`/`mut` and lifetime ticks inside
+## function signatures (parameter lists and return types), excluding receivers' own spelling.
+fn signature_annotations(text: str, lang: str) -> u64:
+    header = Regex::new(r"\bfn\s+[A-Za-z_][A-Za-z0-9_]*\s*(<[^>]*>)?\s*\(").expect("the pattern")
+    ampersand = Regex::new(r"&").expect("the pattern")
+    lifetime = Regex::new(r"'[a-z_]+\b").expect("the pattern")
+    rust_words = Regex::new(r"\bmut\b").expect("the pattern")
+    uredo_words = Regex::new(r"\b(take|inout|var)\b").expect("the pattern")
+    chars: Vec<char> = text.chars().collect()
+    var n = 0
+    for m in header.find_iter(text):
+        start = text[..m.end()].chars().count() - 1
+        var depth = 0
+        var i = start
+        while i < chars.len():
+            if chars[i] == '(':
+                depth += 1
+            else if chars[i] == ')':
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        params: String = chars[start + 1..i.min(chars.len())].iter().collect()
+        rest: String = chars[(i + 1).min(chars.len())..].iter().collect()
+        opener = if lang == "rs": rest.find('{') else: rest.find(':')
+        newline = rest.find('\n')
+        cut = match (opener, newline):
+            (Some(a), Some(b)): a.min(b)
+            (Some(a), None): a
+            (None, Some(b)): b
+            (None, None): rest.len()
+        sig = format("{} {}", params, &rest[..cut])
+        n += ampersand.find_iter(&sig).count() as u64
+        n += lifetime.find_iter(&sig).count() as u64
+        if lang == "rs":
+            n += rust_words.find_iter(&sig).count() as u64
+        else:
+            n += uredo_words.find_iter(&sig).count() as u64
+    n
+
+## Lines inside `rust { }` blocks plus lines of hand-written `.rs` modules, over all source lines.
+fn raw_rust_share(ure_text: str, extra_rs: [PathBuf]) -> (u64, u64):
+    opener = Regex::new(r"\brust\s*\{").expect("the pattern")
+    var total = 0
+    var raw = 0
+    var depth: i64 = 0
+    for line in ure_text.split('\n'):
+        s = line.trim()
+        if !s.is_empty() && !s.starts_with('#'):
+            total += 1
+        if depth == 0 && opener.is_match(s):
+            depth = braces(s)
+            raw += 1
+            continue
+        if depth > 0:
+            raw += 1
+            depth += braces(s)
+    for f in extra_rs:
+        text = fs::read_to_string(f).unwrap_or_default()
+        n = text.split('\n').filter(l => !l.trim().is_empty() && !l.trim().starts_with("//")).count() as u64
+        raw += n
+        total += n
+    (raw, total)
+
+fn braces(s: str) -> i64:
+    (s.matches('{').count() as i64) - (s.matches('}').count() as i64)
+
+## Mapped share of barrier diagnostics on the negative fixtures (§27).
+fn diagnostics_mapping(root: &Path, uredo: &Path, corpus_target: &Path) -> (u64, u64):
+    colour = Regex::new(r"\x1b\[[0-9;]*m").expect("the pattern")
+    anchored = Regex::new(r"(?m)^error\[E\d+\]:.*\n  --> (\S+)").expect("the pattern")
+    var total = 0
+    var mapped = 0
+    for fx in ["moved", "mismatch", "moved_generic"]:
+        d = root.join("compiler/tests/fixtures").join(fx)
+        r = run(uredo, Vec::from([String::from("check"), d.display().to_string()]), None, corpus_target)
+        text = colour.replace_all(&r.err, "").to_string()
+        for c in anchored.captures_iter(&text):
+            total += 1
+            at = c[1].to_string()
+            if at.ends_with(".ure") || at.contains(".ure:"):
+                mapped += 1
+    (mapped, total)
+
+fn pct(part: u64, whole: u64) -> f64:
+    round1(100.0 *((whole as f64) - (part as f64)) / (whole as f64))
+
+fn signed(x: f64) -> String:
+    format("{x:+.1}%")
+
+fn main():
+    root = repo_root()
+    corpus = root.join("corpus")
+    corpus_target = corpus.join("target")
+    uredo = root.join("compiler/target/debug/uredo")
+    metrics_tool = root.join("docs/corpus-study/roundtrip/tools/metrics.py")
+    paramshape = root.join("docs/corpus-study/analyzer/target/release/paramshape")
+
+    var programs: Vec<PathBuf> = Vec::new()
+    for entry in fs::read_dir(&corpus).expect("the corpus directory").flatten():
+        p = entry.path()
+        name = p.file_name().map(n => n.to_string_lossy().to_string()).unwrap_or_default()
+        if p.is_dir() && name.len() >= 2 && name[..2].chars().all(c => c.is_ascii_digit()):
+            programs.push(p)
+    programs.sort()
+
+    var results: Vec<Program> = Vec::new()
+    for prog in programs:
+        name = prog.file_name().map(n => n.to_string_lossy().to_string()).unwrap_or_default()
+        # No wall-clock time is recorded. It was, and because it changes on every run `results.json`
+        # showed a diff whenever it was regenerated — so it kept being reverted, and drifted away
+        # from `RESULTS.md`, the other half of the same record, by a whole correction. Nothing read
+        # the field. §36 is where timing lives.
+        u = run(&uredo, Vec::from([String::from("run"), prog.display().to_string()]), None, &corpus_target)
+        idiomatic = prog.join("idiomatic")
+        r = run(Path::new("cargo"), args_of(["run", "-q"]), Some(&idiomatic), &corpus_target)
+        same_output = u.code == 0 && r.code == 0 && u.out == r.out
+
+        ure_path = prog.join("src/main.ure")
+        generated_path = prog.join("target/uredo/src/main.rs")
+        idiomatic_path = idiomatic.join("src/main.rs")
+        mu = metrics(&metrics_tool, &ure_path, &corpus_target)
+        mr = metrics(&metrics_tool, &idiomatic_path, &corpus_target)
+        mg = if generated_path.exists():
+            Some(metrics(&metrics_tool, &generated_path, &corpus_target))
+        else:
+            None
+
+        # inference hit rate: non-generic parameters whose generated shape equals the idiomatic one
+        sg = if generated_path.exists():
+            shapes(&paramshape, &generated_path, &corpus_target)
+        else:
+            BTreeMap::new()
+        si = shapes(&paramshape, &idiomatic_path, &corpus_target)
+        var hits = 0
+        var params = 0
+        var misses: Vec<String> = Vec::new()
+        for (key, shape_i) in si:
+            if shape_i.1:
+                continue
+            match sg.get(key):
+                None:
+                    continue
+                Some(shape_g):
+                    params += 1
+                    if shape_g.0 == shape_i.0:
+                        hits += 1
+                    else:
+                        misses.push(format("{}#{}: uredo {} vs rust {}", key.0, key.1, shape_g.0, shape_i.0))
+
+        ure_text = fs::read_to_string(&ure_path).expect("the Uredo source")
+        idiomatic_text = fs::read_to_string(&idiomatic_path).expect("the idiomatic twin")
+        var extra_rs: Vec<PathBuf> = Vec::new()
+        if let Ok(entries) = fs::read_dir(prog.join("src")):
+            for entry in entries.flatten():
+                if entry.path().extension().map_or(false, e => e == "rs"):
+                    extra_rs.push(entry.path())
+        extra_rs.sort()
+        (raw, source_lines) = raw_rust_share(ure_text, extra_rs)
+
+        row = Program {
+            program: name.clone(),
+            same_output,
+            uredo_rc: u.code,
+            rust_rc: r.code,
+            token_reduction_pct: pct(mu.tokens, mr.tokens),
+            char_reduction_pct: pct(mu.nonws_chars, mr.nonws_chars),
+            line_reduction_pct: pct(mu.lines, mr.lines),
+            annotations_ure: mu.annotations,
+            annotations_rust: mr.annotations,
+            sig_annotations_ure: signature_annotations(ure_text, "ure"),
+            sig_annotations_rust: signature_annotations(idiomatic_text, "rs"),
+            hit: hits,
+            params,
+            misses,
+            raw_rust_lines: raw,
+            source_lines,
+            stderr_head: if same_output: String::new() else: head400(&format("{}{}", u.err, r.err)),
+            ure: mu.clone(),
+            rust: mr.clone(),
+            generated: mg,
+        }
+        print("{:20} {:9} tokens {:4} vs {:4} ({})  annot {:3} vs {:3}  hit {}/{}",
+            name, if same_output: "ok" else: "MISMATCH", mu.tokens, mr.tokens,
+            signed(row.token_reduction_pct), mu.annotations, mr.annotations, hits, params)
+        results.push(row)
+
+    (mapped, diagnostics_total) = diagnostics_mapping(&root, &uredo, &corpus_target)
+    write_report(&corpus, results, mapped, diagnostics_total)
+
+fn head400(s: str) -> String:
+    s.chars().take(400).collect::<String>()
+
+fn total(results: [Program], of: impl Fn(&Program) -> u64) -> u64:
+    results.iter().map(p => of(p)).sum()
+
+fn write_report(corpus: &Path, results: take Vec<Program>, mapped: u64, diagnostics_total: u64):
+    tu = total(results, p => p.ure.tokens)
+    tr = total(results, p => p.rust.tokens)
+    cu = total(results, p => p.ure.nonws_chars)
+    cr = total(results, p => p.rust.nonws_chars)
+    lu = total(results, p => p.ure.lines)
+    lr = total(results, p => p.rust.lines)
+    au = total(results, p => p.annotations_ure)
+    ar = total(results, p => p.annotations_rust)
+    su = total(results, p => p.sig_annotations_ure)
+    sr = total(results, p => p.sig_annotations_rust)
+    hits = total(results, p => p.hit)
+    params = total(results, p => p.params)
+    raw = total(results, p => p.raw_rust_lines)
+    src = total(results, p => p.source_lines)
+    # application-style: programs 1–15
+    app: Vec<&Program> = results.iter().filter(p => p.program[..2].parse::<u32>().unwrap_or(99) <= 15).collect()
+    tua: u64 = app.iter().map(p => p.ure.tokens).sum()
+    tra: u64 = app.iter().map(p => p.rust.tokens).sum()
+
+    summary = Summary {
+        programs: results.len(),
+        all_same_output: results.iter().all(p => p.same_output),
+        tokens_ure: tu,
+        tokens_rust: tr,
+        token_reduction_pct: pct(tu, tr),
+        token_reduction_app_pct: pct(tua, tra),
+        chars_ure: cu,
+        chars_rust: cr,
+        char_reduction_pct: pct(cu, cr),
+        lines_ure: lu,
+        lines_rust: lr,
+        line_reduction_pct: pct(lu, lr),
+        annotations_ure: au,
+        annotations_rust: ar,
+        annotation_ratio: round3((au as f64) / (ar as f64)),
+        sig_annotations_ure: su,
+        sig_annotations_rust: sr,
+        sig_annotation_ratio: if sr> 0: Some(round3((su as f64) / (sr as f64))) else: None,
+        hit: hits,
+        params,
+        hit_rate_pct: if params> 0: Some(round1(100.0 *(hits as f64) / (params as f64))) else: None,
+        diagnostics_mapped: mapped,
+        diagnostics_total,
+        mapped_pct:
+        if diagnostics_total > 0: Some(round1(100.0 *(mapped as f64) / (diagnostics_total as f64)))
+        else:
+        None,
+        raw_rust_lines: raw,
+        source_lines: src,
+        raw_rust_share_pct: round1(100.0 *(raw as f64) / (src as f64)),
+    }
+    checks = Checks {
+        tokens: summary.token_reduction_app_pct >= TOKEN_THRESHOLD,
+        annotations: summary.sig_annotation_ratio.unwrap_or(1.0) <= ANNOTATION_THRESHOLD,
+        hit_rate: summary.hit_rate_pct.unwrap_or(0.0) >= HIT_THRESHOLD,
+        mapped: summary.mapped_pct.unwrap_or(0.0) >= MAPPED_THRESHOLD,
+    }
+
+    var md: Vec<String> = Vec::from([
+        String::from("# §43 corpus — results (generated by `corpus/run.py`)"),
+        String::new(),
+        format("{} programs; every Uredo program and its idiomatic Rust twin produce identical output: **{}**.", results.len(), python_bool(summary.all_same_output)),
+        String::new(),
+        String::from("| # | program | output | tokens ure/rust | Δtok | Δchars | Δlines | signature annotations ure/rust | all annotations ure/rust | hit rate | raw Rust |"),
+        String::from("|---|---|---|---|---|---|---|---|---|---|---|"),
+    ])
+    for p in results:
+        md.push(format("| {} | {} | {} | {}/{} | {} | {} | {} | {}/{} | {}/{} | {}/{} | {}/{} |",
+            &p.program[..2], &p.program[3..], if p.same_output: "same" else: "DIFFERENT",
+            p.ure.tokens, p.rust.tokens, signed(p.token_reduction_pct), signed(p.char_reduction_pct),
+            signed(p.line_reduction_pct), p.sig_annotations_ure, p.sig_annotations_rust,
+            p.annotations_ure, p.annotations_rust, p.hit, p.params, p.raw_rust_lines, p.source_lines))
+    md.extend(Vec::from([
+        String::new(),
+        format("**Totals.** tokens {} vs {} ({}; application-style 1–15: {}), non-whitespace characters {} vs {} ({}), lines {} vs {} ({}), signature annotations {} vs {} (ratio {}; all annotations incl. bodies {} vs {}, ratio {}), inference hit rate {}/{} = {}% on non-generic parameters, barrier diagnostics mapped {}/{} = {}% (fixtures), raw-Rust share {}/{} lines = {}%.",
+            tu, tr, signed(summary.token_reduction_pct), signed(summary.token_reduction_app_pct),
+            cu, cr, signed(summary.char_reduction_pct), lu, lr, signed(summary.line_reduction_pct),
+            su, sr, number(summary.sig_annotation_ratio), au, ar, plain(summary.annotation_ratio),
+            hits, params, number(summary.hit_rate_pct), mapped, diagnostics_total,
+            number(summary.mapped_pct), raw, src, plain(summary.raw_rust_share_pct)),
+        String::new(),
+        String::from("## §37 thresholds"),
+        String::new(),
+        String::from("| Threshold | Result |"),
+        String::from("|---|---|"),
+    ]))
+    for (sentence, held) in [
+        ("token reduction ≥ 10% on application-style programs (1–15)", checks.tokens),
+        ("parameter annotations ≤ ½ of idiomatic Rust's (signatures)", checks.annotations),
+        ("inference hit rate ≥ 90% on non-generic parameters", checks.hit_rate),
+        ("≥ 80% of barrier diagnostics mapped", checks.mapped),
+    ]:
+        md.push(format("| {} | {} |", sentence, if held: "**pass**" else: "**fail**"))
+    md.extend(Vec::from([String::new(), String::from("## Inference misses"), String::new()]))
+    var any_miss = false
+    for p in results:
+        for m in p.misses:
+            md.push(format("- {}: {}", p.program, m))
+            any_miss = true
+    if !any_miss:
+        md.push(String::from("none"))
+    md.extend(Vec::from([
+        String::new(),
+        String::from("Method: one tokenizer for both versions (`docs/corpus-study/roundtrip/tools/metrics.py`; comments and tests excluded). Signature annotations (the §37 threshold) count `take`, `inout`, `&`, `var` and lifetime ticks in parameter lists and return types, against `&`, `mut` and lifetime ticks in the Rust twin's signatures; all-annotations additionally counts bodies, where Uredo keeps Rust's `&`/`*` for Rust items and `var` for `mut`. Inference hit rate: for every non-generic parameter of the idiomatic twin, the generated Rust's parameter shape (value / `&` / `&mut`) must equal it (`paramshape`, syn-based). Raw-Rust share: lines inside `rust { }` blocks plus hand-written `.rs` modules over all non-comment source lines. Diagnostics mapping: rustc errors on the compiler's negative fixtures whose primary span was translated to a `.ure` location."),
+        String::new(),
+    ]))
+
+    everything = Results { summary, checks, programs: results }
+    written = serde_json::to_string_pretty(&everything).expect("serialise")
+    fs::write(corpus.join("results.json"), ascii_escaped(&written)).expect("write results.json")
+    fs::write(corpus.join("RESULTS.md"), md.join("\n")).expect("write RESULTS.md")
+    tail = md[md.len() - 12..].join("\n")
+    print("{tail}")
+    print("{}", serde_json::to_string_pretty(&everything.summary).expect("serialise"))
+
+## Python's `json.dump(ensure_ascii=True)`: every non-ASCII character as a `\uXXXX` escape.
+##
+## Not cosmetic. Two tools write this record, and if they disagree about the encoding then whichever
+## ran last owns the committed bytes — the same drift that let `results.json` and `RESULTS.md` fall
+## a correction apart. Comparing the *parsed* JSON hid it; comparing the bytes found it.
+fn ascii_escaped(json: str) -> String:
+    var out = String::new()
+    for c in json.chars():
+        if (c as u32) < 128:
+            out.push(c)
+        else:
+            var buf = [0u16; 2]
+            for unit in c.encode_utf16(&mut buf):
+                out.push_str(&format("\\u{:04x}", unit))
+    out
+
+## `None` prints as Python's `None`, which is what the report has always said.
+fn number(x: f64?) -> String:
+    match x:
+        Some(v): plain(v)
+        None: String::from("None")
+
+## A float as Python's `repr` writes it, which keeps the `.0` an integral value would lose.
+fn plain(x: f64) -> String:
+    format("{x:?}")
+
+## A bool as Python writes it, since this report has always been generated by a Python script.
+fn python_bool(b: bool) -> &'static str:
+    if b: "True" else: "False"
+
+fn repo_root() -> PathBuf:
+    var here = std::env::current_dir().unwrap_or_else(_e => PathBuf::from("."))
+    loop:
+        if here.join("compiler").join("src").is_dir():
+            return here
+        match here.parent():
+            Some(up):
+                here = up.to_path_buf()
+            None:
+                return PathBuf::from(".")

@@ -1,0 +1,72 @@
+##! 10 — Errors: `throws`, `throw`, `?`, `From` conversions, a crate default error,
+##! verbatim `Result` aliases, and what the tail lowering does.
+
+use std::fmt
+
+## An application error type. Nothing about it is special: it is a Rust enum.
+@derive(Debug)
+pub enum AppError:                             # `pub`: a `pub fn` below returns it
+    Parse(std::num::ParseIntError)
+    Io(std::io::Error)
+    Empty
+
+    impl fmt::Display:
+        fn fmt(self, f: inout fmt::Formatter<'_>) -> fmt::Result:
+            match self:                     # `self` is `&Self`: the arms bind by reference (match ergonomics)
+                Parse(e): write!(f, "bad number: {e}")
+                Io(e): write!(f, "io: {e}")
+                Empty: write!(f, "empty input")
+
+    impl std::error::Error                     # marker impl: colon-less header, empty body
+
+## `From` impls make `?` convert. Implementing a *foreign* trait means writing the modes the
+## trait declares — here `take`, because `From::from` takes its argument by value (§15.4).
+impl From<std::num::ParseIntError> for AppError:
+    fn from(e: take std::num::ParseIntError) -> Self: Self::Parse(e)
+
+impl From<std::io::Error> for AppError:
+    fn from(e: take std::io::Error) -> Self: Self::Io(e)
+
+## With a default declared, private functions may write bare `throws` (D24).
+@!default_error(AppError)
+
+## `-> T throws E` is `Result<T, E>`. `return v` and the tail expression are wrapped in `Ok`;
+## `throw e` is `return Err(e)`; `?` propagates with `From` conversion.
+fn parse_total(input: str) -> u64 throws:
+    if input.trim().is_empty(): throw AppError::Empty
+    var total: u64 = 0
+    for part in input.split(','):
+        n: u64 = part.trim().parse()?          # ParseIntError -> AppError via From
+        total += n
+    total                                       # lowered to Ok(total)
+
+## A tail expression that is *already* a Result ends in `?`. It does not lower to `Ok(e?)`
+## (which would copy the error payload); it lowers to a match through `__uredo_owned` that
+## is code-identical to returning the Result directly (D37).
+fn read_total(path: str) -> u64 throws:
+    text = std::fs::read_to_string(path)?
+    parse_total(text)?
+
+## `pub` functions always name their error type (D24).
+pub fn total_or_zero(input: str) -> u64 throws AppError:
+    match parse_total(input):                   # a Result can be matched like any enum
+        Ok(n): n
+        Err(AppError::Empty): 0
+        Err(e): throw e
+
+## A verbatim `Result` type is plain Rust: no implicit `Ok`, `?` still works (D33).
+fn io_probe(path: str) -> std::io::Result<u64>:
+    meta = std::fs::metadata(path)?
+    Ok(meta.len())
+
+fn main() throws AppError:                      # `main` may throw; `E: Debug` is required by Rust
+    print("{}", parse_total("1, 2, 3")?)
+    print("{}", total_or_zero("")?)
+    fallback = match parse_total("x"):
+        Ok(n): n
+        Err(e):
+            eprint("{e}")
+            0
+    print("{fallback}")
+    print("{:?}", io_probe("/definitely/missing").is_err())
+    _ = read_total                              # referenced so the example is complete

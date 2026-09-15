@@ -1,0 +1,60 @@
+##! What a bare-metal binary must supply before `alloc` works, and what §35's `no_std` entry
+##! recorded as never written: a global allocator, and a panic handler for a target with no
+##! operating system to unwind into.
+##!
+##! Both are `#[cfg(not(test))]`. On the host the test harness links `std`, which brings its own of
+##! each; this module is for the build that has neither. `GlobalAlloc` is an unsafe trait over raw
+##! pointers and `panic_handler` is a lang item, so both are Rust's and live in `rust { }` (§22.2,
+##! §24) — the same escape C FFI and wasm-bindgen's `extern` block need, and for the same reason.
+
+rust {
+    #[cfg(not(test))]
+    mod bare_metal {
+        use core::alloc::{GlobalAlloc, Layout};
+        use core::cell::UnsafeCell;
+        use core::sync::atomic::{AtomicUsize, Ordering};
+
+        /// 8 KiB is enough for this fixture's allocations and small enough to be believable on a
+        /// Cortex-M part. A bump allocator never reuses memory; a real one would.
+        const ARENA: usize = 8 * 1024;
+
+        struct Arena {
+            memory: UnsafeCell<[u8; ARENA]>,
+            next: AtomicUsize,
+        }
+
+        // the arena is only ever reached through atomics
+        unsafe impl Sync for Arena {}
+
+        unsafe impl GlobalAlloc for Arena {
+            unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+                let mut at = self.next.load(Ordering::Relaxed);
+                loop {
+                    let start = (at + layout.align() - 1) & !(layout.align() - 1);
+                    let end = start + layout.size();
+                    if end > ARENA {
+                        return core::ptr::null_mut();
+                    }
+                    match self.next.compare_exchange_weak(at, end, Ordering::SeqCst, Ordering::Relaxed) {
+                        Ok(_) => return unsafe { (self.memory.get() as *mut u8).add(start) },
+                        Err(seen) => at = seen,
+                    }
+                }
+            }
+
+            /// A bump allocator frees nothing. The fixture allocates a bounded amount once.
+            unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+        }
+
+        #[global_allocator]
+        static HEAP: Arena = Arena {
+            memory: UnsafeCell::new([0; ARENA]),
+            next: AtomicUsize::new(0),
+        };
+
+        #[panic_handler]
+        fn panicked(_info: &core::panic::PanicInfo) -> ! {
+            loop {}
+        }
+    }
+}

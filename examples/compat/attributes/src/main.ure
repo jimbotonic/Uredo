@@ -1,0 +1,69 @@
+##! §35 compatibility entry: **a field or item attribute forwarded to a derive macro** (§23).
+##!
+##! Four crates ask the same question of Uredo — can an attribute reach a derive macro unchanged,
+##! wherever the macro expects it — so one fixture answers it for all four: serde's field attributes,
+##! thiserror's variant and field attributes, clap's `@command`/`@arg`, and tracing's `@instrument`.
+##! Nothing here uses `rust { }`: the point is that none of it needs to.
+
+use clap::Parser
+use serde::{Deserialize, Serialize}
+use thiserror::Error
+use tracing::instrument
+
+## serde: attributes on named fields, each on its own line above the field (§23).
+@derive(Debug, Serialize, Deserialize, PartialEq)
+struct Config:
+    @serde(rename = "listen_on")
+    address: String
+    @serde(default)
+    retries: u32
+    @serde(skip)
+    cached: bool
+
+## thiserror: an attribute on a variant, and one on a field of a tuple variant, which has no line of
+## its own and so takes the attribute inline (D55).
+@derive(Debug, Error)
+enum LoadError:
+    @error("no configuration at {0}")
+    Missing(String)
+    @error("configuration is not valid json")
+    Parse( @from serde_json::Error)
+
+## clap: an item attribute with arguments, and field attributes on an optional and a scalar.
+@derive(Parser, Debug, PartialEq)
+@command(name = "attributes", about = "the §35 forwarded-attribute fixture")
+struct Cli:
+    @arg(short, long, default_value_t = 1)
+    verbose: u32
+    @arg(long)
+    name: String?
+
+## tracing: an item attribute that rewrites the function body around the original.
+@instrument(level = "debug", skip(config))
+fn load(config: Config) -> u32:
+    config.retries + 1
+
+fn parse(text: str) -> Config throws LoadError:
+    if text.is_empty(): throw LoadError::Missing(String::from("<empty>"))
+    serde_json::from_str(text)?
+
+fn main():
+    # serde: `listen_on` is read into `address`, `retries` defaults, `cached` is skipped
+    config = parse("{\"listen_on\": \"127.0.0.1:80\"}").unwrap()
+    print("{} {} {}", config.address, config.retries, config.cached)
+    print("{}", serde_json::to_string(&config).unwrap())
+
+    # thiserror: the `Display` impl comes from `@error`, and `?` converts through `@from`
+    match parse(""):
+        Err(e): print("{e}")
+        Ok(_): print("unreachable")
+    match parse("not json"):
+        Err(e): print("{e}")
+        Ok(_): print("unreachable")
+
+    # clap: parsed from an explicit argument list, so the fixture needs no command line
+    cli = Cli::parse_from(["attributes", "--verbose", "3", "--name", "ada"])
+    print("{} {:?}", cli.verbose, cli.name)
+
+    # tracing: the instrumented function runs; with no subscriber installed the span is dropped
+    print("{}", load(config))

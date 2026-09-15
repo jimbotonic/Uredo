@@ -1,0 +1,18 @@
+##! Fixture for `uredo lint` (§28.1): one finding of each lint, and cases that must stay silent.
+
+use foreign::Tag
+
+fn count(names: Vec<String>) -> usize:        # borrowed_container: `[String]` accepts more
+    names.len()
+
+fn double(n: take u32) -> u32:                # redundant_take: a known-Copy type passes by value
+    n * 2
+
+fn tag_of(t: Tag) -> Tag:                     # copy_candidate: every use is `*t`
+    *t
+
+fn silent(names: [String], s: str, owned: take String, o: String?) -> usize:
+    names.len() + s.len() + owned.len() + if o.is_some(): 1 else: 0
+
+fn main():
+    print("{} {}", count(Vec::new()), double(2))

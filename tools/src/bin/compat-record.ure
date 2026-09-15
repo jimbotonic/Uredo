@@ -1,0 +1,272 @@
+##! §35 compatibility record: generates `docs/COMPATIBILITY.md` from the repository.
+##!
+##! §35 defines each entry as a contract — crate, version and features; Cargo target kind; the
+##! operations that must work in native Uredo syntax; the raw-Rust escapes permitted, by operation,
+##! with the reason; behaviour on fixture inputs; the paired negative case; clean-archive
+##! consumption; mutation rebuilds. The judgement half of that contract lives in `entries.json`,
+##! written by hand. The measurable half is computed here from the sources themselves, so the
+##! record cannot drift from the suites it describes:
+##!
+##!   files, source lines, and the native / raw-Rust split, by the same definition `corpus/run.py`
+##!   uses; whether the covering package is exported by `uredo package` and built by plain Cargo;
+##!   which record shows the entry behaving correctly on fixture inputs
+##!
+##! usage: compat-record            (writes docs/COMPATIBILITY.md)
+
+use std::collections::BTreeMap
+use std::collections::BTreeSet
+use std::fs
+use std::path::{Path, PathBuf}
+use serde::Deserialize
+use regex::Regex
+
+## The judgement half of the contract, written by hand in `entries.json`.
+@derive(Deserialize)
+struct Entry:
+    name: String
+    dep: String
+    covers: Vec<String>
+    kinds: Vec<String>
+    native: Vec<String>
+    escapes: Vec<String>
+    missing: Vec<String>
+    evidence: Vec<String>
+
+@derive(Deserialize)
+struct Entries:
+    entries: Vec<Entry>
+
+## The measurable half, computed here.
+struct Row:
+    entry: Entry
+    files: usize
+    lines: usize
+    raw: usize
+    archive: Vec<String>
+
+impl Row:
+    ## An entry with no covered path is proved by a test rather than by a fixture; one with a
+    ## covered path and something missing is partial; one with neither is not exercised at all.
+    fn status(self) -> str:
+        if entry.covers.is_empty() && entry.evidence.is_empty():
+            "**not exercised**"
+        else if !entry.missing.is_empty() && !entry.covers.is_empty():
+            "partial"
+        else:
+            "covered"
+
+## Lines inside `rust { }` blocks plus hand-written `.rs` lines, over all source lines.
+fn raw_rust_share(text: str) -> (usize, usize):
+    opener = Regex::new(r"\brust\s*\{").expect("the pattern")
+    var total = 0
+    var raw = 0
+    var depth: i64 = 0
+    for line in text.split('\n'):
+        s = line.trim()
+        if !s.is_empty() && !s.starts_with('#'):
+            total += 1
+        if depth == 0 && opener.is_match(s):
+            depth = braces(s)
+            raw += 1
+            continue
+        if depth > 0:
+            raw += 1
+            depth += braces(s)
+    (raw, total)
+
+fn braces(s: str) -> i64:
+    (s.matches('{').count() as i64) - (s.matches('}').count() as i64)
+
+## Lines of a hand-written Rust file that are neither blank nor a comment.
+fn rust_lines(path: &Path) -> usize:
+    text = fs::read_to_string(path).unwrap_or_default()
+    text.split('\n').filter(l => !l.trim().is_empty() && !l.trim().starts_with("//")).count()
+
+## Records of a comparison, not sources of a package: an untouched original, a lowering of it, or
+## the expected output of a golden test.
+fn not_source(name: str) -> bool:
+    name == "original.rs" || name == "generated.rs" || name == "lowered.rs"
+
+## The `.ure` files of a covered path, and the hand-written `.rs` files beside them.
+##
+## A covered path may name one file. A directory is walked, skipping build output, the idiomatic
+## twins, and any nested crate — a subdirectory with its own `Cargo.toml` is a separate package and
+## its sources belong to whichever entry covers it.
+fn sources_of(root: &Path, rel: str) -> (Vec<PathBuf>, Vec<PathBuf>):
+    path = root.join(rel)
+    var ure = Vec::new()
+    var rs = Vec::new()
+    if path.is_file():
+        if path.extension().map_or(false, e => e == "ure"):
+            ure.push(path)
+        else:
+            rs.push(path)
+        return (ure, rs)
+    walk = walkdir::WalkDir::new(&path).into_iter().filter_entry(e => keep_directory(e))
+    for entry in walk.filter_map(e => e.ok()):
+        p = entry.path()
+        if !p.is_file():
+            continue
+        name = p.file_name().map(n => n.to_string_lossy().to_string()).unwrap_or_default()
+        if name.ends_with(".ure"):
+            ure.push(p.to_path_buf())
+        else if name.ends_with(".rs") && !not_source(&name):
+            rs.push(p.to_path_buf())
+    ure.sort()
+    rs.sort()
+    (ure, rs)
+
+fn keep_directory(entry: &walkdir::DirEntry) -> bool:
+    if !entry.file_type().is_dir() || entry.depth() == 0:
+        return true
+    name = entry.file_name().to_string_lossy().to_string()
+    skipped = name == "target" || name == "idiomatic" || name == "orig" || name == "gen"
+    !skipped && !entry.path().join("Cargo.toml").exists()
+
+## Which packages are known to export and build as plain Cargo, and from what record.
+fn archive_evidence(root: &Path) -> BTreeMap<String, String>:
+    var ev = BTreeMap::new()
+    perf = root.join("corpus/perf.json")
+    if let Ok(text) = fs::read_to_string(&perf):
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text):
+            if let Some(programs) = value["programs"].as_array():
+                for p in programs.iter():
+                    if !p["uredo"].is_null():
+                        if let Some(name) = p["program"].as_str():
+                            ev.insert(format("corpus/{name}"), String::from("`uredo package` then `cargo build --release`, per `corpus/PERF.md`"))
+    var text = String::new()
+    for t in ["cli.rs", "gate.rs"]:
+        path = root.join("compiler/tests").join(t)
+        if let Ok(s) = fs::read_to_string(&path):
+            text.push_str(&s)
+    if text.contains("gate_consumer"):
+        ev.insert(String::from("examples/gate"), String::from("exported by `uredo package` and consumed by the plain-Rust `gate_consumer` fixture (gate item 5)"))
+    if text.contains("fixtures/consumer"):
+        ev.insert(String::from("examples/geometry"), String::from("exported by `uredo package` and consumed by the plain-Rust `consumer` fixture"))
+    ev
+
+fn backticked(items: [String]) -> String:
+    joined: Vec<String> = items.iter().map(c => format("`{c}`")).collect()
+    joined.join(", ")
+
+fn or_dash(s: take String) -> String:
+    if s.is_empty(): String::from("—") else: s
+
+fn measure(root: &Path, entry: take Entry, archive: &BTreeMap<String, String>) -> Row:
+    var ure_files = Vec::new()
+    var rs_files = Vec::new()
+    for rel in entry.covers:
+        (u, r) = sources_of(root, rel)
+        ure_files.extend(u)
+        rs_files.extend(r)
+    var raw = 0
+    var total = 0
+    for u in ure_files:
+        (a, b) = raw_rust_share(&fs::read_to_string(u).unwrap_or_default())
+        raw += a
+        total += b
+    for r in rs_files:
+        n = rust_lines(r)
+        raw += n
+        total += n
+    # a covered path may sit inside a package whose archive consumption is recorded
+    var seen = BTreeSet::new()
+    for c in entry.covers:
+        for (k, v) in archive:
+            if c == k || c.starts_with(&format("{k}/")):
+                seen.insert(v.clone())
+    Row {
+        entry,
+        files: ure_files.len() + rs_files.len(),
+        lines: total,
+        raw,
+        archive: seen.into_iter().collect(),
+    }
+
+fn main():
+    root = repo_root()
+    meta: Entries = serde_json::from_str(&fs::read_to_string(root.join("docs/compat/entries.json")).expect("entries.json")).expect("the entry schema")
+    archive = archive_evidence(&root)
+    rows: Vec<Row> = meta.entries.into_iter().map(e => measure(&root, e, &archive)).collect()
+
+    var out: Vec<String> = Vec::from([
+        String::from("# §35 compatibility record"),
+        String::new(),
+        String::from("Generated by `docs/compat/record.py` from `docs/compat/entries.json` and the sources themselves."),
+        String::from("**This is the recording pass, not the finished suite.** §35 asks for each entry to be a contract; this states, per entry, what is exercised today, in which target kind, with which escapes and why, and what is missing. It replaces the previous claim that \"the corpus and portfolio cover most entries\", which was true but unmeasured."),
+        String::new(),
+        String::from("| Entry | Crate and features | Exercised in | Target kinds | Source lines | Raw-Rust lines | Status |"),
+        String::from("|---|---|---|---|---|---|---|"),
+    ])
+    for row in rows:
+        share = if row.lines > 0:
+            format("{} ({:.0}%)", row.raw, 100.0 *(row.raw as f64) / (row.lines as f64))
+        else:
+            String::from("—")
+        lines = if row.lines > 0: row.lines.to_string() else: String::from("—")
+        out.push(format("| {} | {} | {} | {} | {} | {} | {} |",
+            row.entry.name, row.entry.dep, or_dash(backticked(row.entry.covers)),
+            or_dash(row.entry.kinds.join(", ")), lines, share, row.status()))
+
+    exercised = rows.iter().filter(r => r.status() != "**not exercised**").count()
+    complete = rows.iter().filter(r => r.status() == "covered").count()
+    partial = rows.iter().filter(r => r.status() == "partial").count()
+    absent = rows.len() - exercised
+    out.extend(Vec::from([
+        String::new(),
+        format("**{} of {} entries are exercised** ({} of them fully, {} with a recorded gap); {} are not exercised at all.", exercised, rows.len(), complete, partial, absent),
+        String::new(),
+        String::from("## Per entry"),
+        String::new(),
+    ]))
+    for row in rows:
+        e = &row.entry
+        out.push(format("### {}", e.name))
+        out.push(String::new())
+        out.push(format("- **Contract:** {}; target kinds {}.", e.dep, if e.kinds.is_empty(): String::from("none yet") else: e.kinds.join(", ")))
+        if !e.covers.is_empty():
+            out.push(format("- **Exercised in:** {} ({} file(s), {} source lines, {} inside `rust {{ }}` or hand-written `.rs`).", backticked(e.covers), row.files, row.lines, row.raw))
+        if !e.native.is_empty():
+            out.push(format("- **Native operations verified:** {}.", e.native.join("; ")))
+        if !e.escapes.is_empty():
+            out.push(format("- **Permitted escapes:** {}.", e.escapes.join("; ")))
+        else if !e.covers.is_empty():
+            out.push(String::from("- **Permitted escapes:** none; the entry is written entirely in Uredo syntax."))
+        if !row.archive.is_empty():
+            out.push(format("- **Clean-archive consumption:** {}.", row.archive.join("; ")))
+        else if !e.covers.is_empty():
+            out.push(String::from("- **Clean-archive consumption:** not verified for this entry's sources."))
+        if !e.evidence.is_empty():
+            out.push(format("- **Behaviour on fixture inputs:** {}.", e.evidence.join("; ")))
+        if !e.missing.is_empty():
+            out.push(format("- **Missing:** {}.", e.missing.join("; ")))
+        out.push(String::new())
+
+    out.extend(Vec::from([
+        String::from("## What the recording pass found"),
+        String::new(),
+        String::from("The pass began on 2026-09-12 with 11 entries exercised and three structural gaps. All three are now closed, and every gap was closed by building the fixture rather than by arguing about it:"),
+        String::new(),
+        String::from("1. **The target kinds.** No package had an integration-test or example target, and nothing lowered one. `tests/`, `examples/` and `benches/` are now lowered as the separate Cargo targets they are, each compiled against the library by name, and `examples/compat/targets` exercises all four kinds at once."),
+        String::from("2. **Mutation rebuilds.** Nothing checked that an edit takes effect or that stale output goes away. The sequence now runs on a copy of that fixture: an edit changes what runs, a feature switch selects the other alternate, a deleted source file and a deleted test leave no generated file behind, and a manifest edit reaches the generated manifest."),
+        String::from("3. **A crate-level negative case.** Every negative fixture was a language rule. The database entry now carries one that arrives through a proc macro: a misspelled column fails the build with the database's own message. Making it useful required a fix — a diagnostic raised inside a macro points at the macro's own file in a dependency, so the translator now follows the expansion back to the call site and anchors it in Uredo source."),
+        String::new(),
+        String::from("Six defects were found by building these fixtures, each fixed with a test: the two attribute spellings the language lacked (D55 inline on a tuple field, D57 name-value), `@copy use` unable to name a generic instantiation (D56), a relative path dependency not surviving lowering, `uredo run` swallowing a line of program output that parsed as JSON, and the formatter spacing out the type arguments of a `use` path."),
+        String::new(),
+        String::from("What is still not proved, recorded per entry rather than here: the wasm entry is not run in a JavaScript engine, the `no_std` entry reaches only the non-allocating half of the language and §35 defers the rest to Phase 3, and benches are lowered by the same rule as tests and examples but nothing exercises them."),
+    ]))
+
+    fs::write(root.join("docs/COMPATIBILITY.md"), format("{}\n", out.join("\n"))).expect("write the record")
+    print("wrote docs/COMPATIBILITY.md: {} entries, {} exercised, {} not", rows.len(), exercised, absent)
+
+## The checkout, found by walking up from where the command was run until `compiler/src` appears.
+fn repo_root() -> PathBuf:
+    var here = std::env::current_dir().unwrap_or_else(_e => PathBuf::from("."))
+    loop:
+        if here.join("compiler").join("src").is_dir():
+            return here
+        match here.parent():
+            Some(up):
+                here = up.to_path_buf()
+            None:
+                return PathBuf::from(".")

@@ -1,0 +1,40 @@
+##! 7. File reading: write a temporary file, read it back, count lines and words, propagate I/O errors.
+
+use std::fs
+use std::io::{BufRead, BufReader, Write}
+use std::path::{Path, PathBuf}
+
+@!default_error(std::io::Error)
+
+fn write_sample(path: &Path) throws:
+    var file = fs::File::create(path)?
+    for i in 1..=5:
+        writeln!(file, "line {i}: the quick brown fox")?
+
+fn count_lines_and_words(path: &Path) -> (usize, usize) throws:
+    reader = BufReader::new(fs::File::open(path)?)
+    var lines = 0
+    var words = 0
+    for line in reader.lines():
+        let line = line?                            # shadowing: the `Result` becomes the `String`
+        lines += 1
+        words += line.split_whitespace().count()
+    (lines, words)
+
+fn longest_line(path: &Path) -> String throws:
+    text = fs::read_to_string(path)?
+    longest = text.lines().max_by_key(l => l.len()).unwrap_or("")
+    longest.to_string()
+
+fn main() throws:
+    path: PathBuf = std::env::temp_dir().join("uredo_corpus_07.txt")
+    write_sample(&path)?
+    (lines, words) = count_lines_and_words(&path)?
+    print("{lines} lines, {words} words")
+    print("longest: {}", longest_line(&path)?)
+    size = fs::metadata(&path)?.len()
+    print("{size} bytes")
+    fs::remove_file(&path)?
+    match fs::read_to_string(&path):
+        Ok(_): print("still there?")
+        Err(e): print("gone: {}", e.kind())

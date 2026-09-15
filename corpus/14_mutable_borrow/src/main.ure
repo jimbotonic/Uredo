@@ -1,0 +1,44 @@
+##! 14. Mutable borrowing: `inout` parameters, `for … in inout`, `self: inout`, slices.
+
+@derive(Debug, Default)
+struct Stats:
+    count: usize
+    sum: i64
+
+    fn add(self: inout, value: i64):
+        self.count += 1
+        self.sum += value
+
+fn normalise(values: inout [f64]):
+    max = values.iter().cloned().fold(f64::MIN, f64::max)
+    if max > 0.0:
+        for v in inout values:
+            *v /= max
+
+fn bump_all(counters: inout Vec<u32>, by: u32):
+    for c in inout counters:
+        *c += by
+    counters.push(by)
+
+fn record(stats: inout Stats, values: [i64]):
+    for v in values:
+        stats.add(*v)
+
+fn swap_ends(xs: inout [i32]):
+    n = xs.len()
+    if n >= 2:
+        xs.swap(0, n - 1)
+
+fn main():
+    var values = [3.0, 1.5, 6.0]
+    normalise(values)
+    print("{values:?}")
+    var counters = Vec::from([1, 2, 3])
+    bump_all(counters, 10)
+    print("{counters:?}")
+    var stats = Stats::default()
+    record(stats, [4, 5, 6])
+    print("{} values sum {}", stats.count, stats.sum)
+    var xs = [1, 2, 3, 4]
+    swap_ends(xs)
+    print("{xs:?}")

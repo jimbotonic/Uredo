@@ -1,0 +1,49 @@
+##! §35 compatibility entry: **a builder-heavy client API** (reqwest).
+##! What this checks is P8 against a real API: every builder method takes `self` by value and returns
+##! it, and several parameters are `impl Into<…>` or a type parameter, which D52 passes by value with
+##! the type form as the visible sign. The server is a canned HTTP/1.1 responder in this process, so
+##! the fixture needs no network.
+
+@!default_error(Box<dyn std::error::Error + Send + Sync>)
+
+use serde::Deserialize
+use tokio::io::{AsyncReadExt, AsyncWriteExt}
+use tokio::net::TcpListener
+
+@derive(Deserialize, Debug)
+struct Reply:
+    method: String
+    seen: u32
+
+## One connection, one canned reply: enough for the client to parse a JSON body.
+async fn respond_once(listener: take TcpListener) throws:
+    (stream, _) = listener.accept().await?
+    var socket = stream
+    var buf = vec![0u8; 1024]
+    n = socket.read(&mut buf).await?
+    request = String::from_utf8_lossy(&buf[..n]).to_string()
+    method = request.split(' ').next().unwrap_or("?")
+    body = format("{{\"method\":\"{method}\",\"seen\":{n}}}")
+    head = format("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n", body.len())
+    socket.write_all((head + &body).as_bytes()).await?
+
+@rust(tokio::main(flavor = "current_thread"))
+async fn main() throws:
+    listener = TcpListener::bind("127.0.0.1:0").await?
+    addr = listener.local_addr()?.to_string()
+    tokio::spawn(respond_once(listener))
+
+    # every call in this chain consumes the builder and returns it (P8, D52): no `take` is written,
+    # because the type form of a by-value `self` is the framework's, not Uredo's
+    client = reqwest::Client::builder().user_agent("uredo-compat").build()?
+    response = client
+        .post(format("http://{addr}/items"))
+        .header("x-fixture", "1")
+        .query(&[("page", "2")])
+        .json(&serde_json::json!({ "name": "widget" }))
+        .send()
+        .await?
+
+    status = response.status().as_u16()
+    reply: Reply = response.json().await?
+    print("{status} {} {}", reply.method, reply.seen > 0)

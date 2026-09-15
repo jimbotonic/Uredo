@@ -1,0 +1,30 @@
+##! §35 compatibility entry: **an n-dimensional array crate** (ndarray). Two things are under test:
+##! a macro whose body Uredo must hand to rustc untouched (`s![…]`, §22.5), and a heap-backed
+##! foreign type, which is *not* known-Copy and so passes as a shared borrow (P3) with no annotation.
+
+use ndarray::{Array1, Array2, s}
+
+## A heap-backed array is not known-Copy, so this is `&Array2<f64>` — the default, nothing written.
+fn trace(m: Array2<f64>) -> f64:
+    var total = 0.0
+    for i in 0..m.nrows().min(m.ncols()):
+        total += m[[i, i]]
+    total
+
+## The slicing macro's body is opaque tokens: `..`, `;` and negative steps reach rustc as written.
+fn column_sum(m: Array2<f64>, col: usize) -> f64:
+    m.slice(s![.., col]).sum()
+
+## `take` where the callee really consumes: the array is moved into the new shape.
+fn reshaped(data: take Array1<f64>) -> Array2<f64>:
+    data.into_shape_with_order((2, 3)).unwrap()
+
+fn main():
+    m = Array2::from_shape_vec((3, 3), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]).unwrap()
+    print("{} {}", trace(m), column_sum(m, 1))
+
+    flat = Array1::from(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+    grid = reshaped(flat)
+    print("{} {}", grid.nrows(), grid[[1, 2]])
+
+    print("{:?}", m.slice(s![0, ..;2]).to_vec())

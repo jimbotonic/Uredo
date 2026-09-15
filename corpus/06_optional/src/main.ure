@@ -1,0 +1,50 @@
+##! 6. Optional handling: `T?`, `if let`, `let-else`, `?` on Option, combinators.
+
+@derive(Debug)
+struct Account:
+    owner: String
+    email: String?
+
+fn find<'a>(accounts: &'a [Account], owner: str) -> &'a Account?:     # two borrows: the lifetime is written (§9.7)
+    accounts.iter().find(a => a.owner == owner)
+
+fn email_domain(accounts: [Account], owner: str) -> String?:
+    account = find(accounts, owner)?                # `accounts` is already `&[Account]`: verbatim (D47)
+    email = account.email.as_deref()?
+    domain = email.split('@').nth(1)?
+    Some(domain.to_string())
+
+fn describe(email: String?) -> &'static str:      # a `String` payload is not known-Copy: `&Option<String>` (P3)
+    match email:
+        Some(e) if e.ends_with(".org"): "non-profit"
+        Some(_): "has email"
+        None: "no email"
+
+fn tier(score: u32?) -> &'static str:             # a known-Copy payload: `Option<u32>` by value (P1, D54)
+    match score:
+        Some(s) if s >= 90: "gold"
+        Some(_): "member"
+        None: "guest"
+
+fn initial(name: &String?) -> char:               # `&T?` is `Option<&T>`, itself known-Copy: by value (D54)
+    name.and_then(n => n.chars().next()).unwrap_or('?')
+
+fn main():
+    accounts = Vec::from([
+        Account { owner: String::from("ada"), email: Some(String::from("ada@example.org")) },
+        Account { owner: String::from("bob"), email: None },
+    ])
+    for owner in ["ada", "bob", "cy"]:
+        print("{owner}: {:?}", email_domain(accounts, owner))
+    if let Some(a) = find(&accounts, "bob"):           # an explicit `&'a [T]` parameter is P6: the caller writes `&`
+        print("bob is {}", describe(a.email))
+    let Some(first) = accounts.first() else:
+        print("no accounts")
+        return
+    print("first owner {} ({})", first.owner, describe(first.email))
+    fallback = email_domain(accounts, "bob").unwrap_or_else(() => String::from("none"))
+    print("{fallback}")
+    lengths: Vec<usize> = accounts.iter().filter_map(a => a.email.as_ref().map(e => e.len())).collect()
+    print("{lengths:?}")
+    print("{} {} {}", tier(Some(95)), tier(Some(10)), tier(None))
+    print("{} {}", initial(accounts.first().map(a => &a.owner)), initial(None))

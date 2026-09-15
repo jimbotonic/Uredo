@@ -1,0 +1,42 @@
+##! 12. Trait implementation: a trait with a default method, two impls, static and dynamic dispatch.
+
+trait Shape:
+    fn area(self) -> f64
+    fn name(self) -> String
+    fn describe(self) -> String:
+        format("{} with area {:.2}", self.name(), self.area())
+
+@derive(Debug, Clone, Copy)
+struct Circle:
+    r: f64
+
+    impl Shape:
+        fn area(self) -> f64: std::f64::consts::PI * r * r
+        fn name(self) -> String: String::from("circle")
+
+struct Rect:
+    w: f64
+    h: f64
+
+impl Shape for Rect:
+    fn area(self) -> f64: w * h
+    fn name(self) -> String: String::from("rect")
+    fn describe(self) -> String: format("{}x{} rect", w, h)
+
+fn print_static<T: Shape>(shape: T):
+    print("static: {}", shape.describe())
+
+fn total_area(shapes: [Box<dyn Shape>]) -> f64:
+    shapes.iter().map(s => s.area()).sum()
+
+impl std::fmt::Display for Circle:
+    fn fmt(self, f: inout std::fmt::Formatter<'_>) -> std::fmt::Result:
+        write!(f, "○ r={}", self.r)
+
+fn main():
+    c = Circle { r: 1.0 }
+    print_static(c)
+    print_static(Rect { w: 2.0, h: 3.0 })
+    shapes: Vec<Box<dyn Shape>> = Vec::from([Box::new(c) as Box<dyn Shape>, Box::new(Rect { w: 1.0, h: 1.0 })])
+    print("total {:.2}", total_area(shapes))
+    print("{c}")

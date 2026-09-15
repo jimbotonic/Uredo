@@ -1,0 +1,70 @@
+{
+  "package": "geometry",
+  "uredo": "0.0.1",
+  "items": [
+    {
+      "path": "shapes",
+      "kind": "mod",
+      "signature": "pub mod shapes"
+    },
+    {
+      "path": "shapes::Circle",
+      "kind": "struct",
+      "signature": "pub struct Circle",
+      "attrs": [
+        "derive(Debug, Clone)"
+      ],
+      "members": [
+        "pub r: f64",
+        "pub label: String"
+      ]
+    },
+    {
+      "path": "shapes::Circle::area",
+      "kind": "method",
+      "signature": "fn area(&self) -> f64"
+    },
+    {
+      "path": "shapes::Rect",
+      "kind": "struct",
+      "signature": "pub struct Rect",
+      "attrs": [
+        "derive(Debug, Clone, Copy, PartialEq)"
+      ],
+      "members": [
+        "pub w: f64",
+        "pub h: f64"
+      ]
+    },
+    {
+      "path": "shapes::Rect::area",
+      "kind": "method",
+      "signature": "fn area(&self) -> f64"
+    },
+    {
+      "path": "shapes::Rect::new",
+      "kind": "method",
+      "signature": "fn new(w: f64, h: f64) -> Self"
+    },
+    {
+      "path": "shapes::Rect::scale",
+      "kind": "method",
+      "signature": "fn scale(&mut self, k: f64)"
+    },
+    {
+      "path": "shapes::describe",
+      "kind": "fn",
+      "signature": "fn describe(c: &Circle) -> String"
+    },
+    {
+      "path": "total_area",
+      "kind": "fn",
+      "signature": "fn total_area(rects: &[Rect]) -> f64"
+    },
+    {
+      "path": "use shapes::{Circle, Rect}",
+      "kind": "use",
+      "signature": "pub use shapes::{Circle, Rect};"
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+##! 21 — Implementing `Iterator` and `IntoIterator`; associated types; generic traits
+##! with associated types; iterator adaptors written by hand.
+
+## A hand-written iterator: state in a struct, `next` on `self: inout`, `type Item` as Rust.
+struct Fib:
+    a: u64
+    b: u64
+
+    impl Iterator:
+        type Item = u64
+        fn next(self: inout) -> u64?:
+            out = a                                  # bare-field read (D41)
+            self.a = b                               # field writes spell `self.` (D41)
+            self.b = out + b
+            Some(out)
+
+fn fib() -> Fib: Fib { a: 0, b: 1 }
+
+## A collection type that can be looped over: `IntoIterator` for the borrowed form.
+struct Deck:
+    cards: Vec<u8>
+
+    ## `impl<'a> IntoIterator for &'a Deck` has its own generic parameter, so it lives at module
+    ## level (D45 covers impls for the enclosing type without extra generics).
+    fn len(self) -> usize: cards.len()
+
+impl<'a> IntoIterator for &'a Deck:
+    type Item = &'a u8
+    type IntoIter = std::slice::Iter<'a, u8>
+    fn into_iter(self: take) -> Self::IntoIter: self.cards.iter()
+
+## A generic trait with an associated type (Rust syntax throughout, §19).
+trait Container:
+    type Item
+    fn get(self, i: usize) -> Self::Item?
+    fn first(self) -> Self::Item?: self.get(0)       # default method using the associated type
+
+impl Container for Deck:
+    type Item = u8
+    fn get(self, i: usize) -> u8?: cards.get(i).copied()
+
+## A generic adaptor consumes its input, and a type parameter passes by value already (P8, D52),
+## so no `take` is written — `uredo lint` reports one here as redundant.
+fn every_other<I: Iterator>(it: I) -> impl Iterator<Item = I::Item>:
+    it.step_by(2)
+
+fn main():
+    firsts: Vec<u64> = fib().take(10).collect()      # `take` here is Iterator::take: a method, not the keyword (D11)
+    print("{firsts:?}")
+    print("{:?}", fib().filter(n => n % 2 == 0).nth(4))
+    deck = Deck { cards: Vec::from([7, 8, 9, 10]) }
+    for c in deck: print("card {c}")                  # `for c in deck` borrows: uses `impl IntoIterator for &Deck`
+    print("{} {:?} {:?}", deck.len(), deck.first(), deck.get(9))
+    evens: Vec<u64> = every_other(fib()).take(5).collect()
+    print("{evens:?}")

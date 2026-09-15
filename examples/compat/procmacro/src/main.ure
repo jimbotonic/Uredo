@@ -1,0 +1,24 @@
+##! §35 compatibility entry: **consuming a procedural macro**. §22.6 says a proc-macro crate is
+##! written in Rust; the half that needed testing is this one — an Uredo type carrying a derive that
+##! generates an `impl`, an attribute the derive reads (`@label`, forwarded verbatim under §23), and
+##! Uredo code calling the generated method as if it had been written by hand.
+
+use compat_derive::FieldNames
+
+@derive(FieldNames, Debug)
+@label = "user."
+struct User:
+    id: u32
+    email: String
+
+@derive(FieldNames)
+struct Empty:
+    only: bool
+
+fn describe() -> String:
+    User::field_names().join(", ")
+
+fn main():
+    print("{}", describe())
+    print("{:?}", Empty::field_names())
+    print("{}", User { id: 1, email: String::from("a@b") }.id)

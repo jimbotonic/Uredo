@@ -1,0 +1,10 @@
+[package]
+name = "gate_consumer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+gate = { path = "../../../../examples/gate/target/package/gate" }
+
+[workspace]

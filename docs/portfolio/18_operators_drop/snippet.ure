@@ -1,0 +1,52 @@
+##! 18 — Operator overloading, `Drop`, `Clone` vs `Copy`, ordering and equality.
+
+use std::ops::{Add, Mul}
+
+## Operator traits are std traits: implement them like any other (nested here, D45).
+@derive(Debug, Clone, Copy, PartialEq)
+struct Vec2:
+    x: f64
+    y: f64
+
+    impl Add:
+        type Output = Vec2                       # associated type: Rust syntax
+        fn add(self: take, rhs: Vec2) -> Vec2:          # `Add::add` takes `rhs` by value: the std-trait table (D53) says so
+            Vec2 { x: self.x + rhs.x, y: self.y + rhs.y }
+
+    impl Mul<f64>:
+        type Output = Vec2
+        fn mul(self: take, k: f64) -> Vec2: Vec2 { x: self.x * k, y: self.y * k }
+
+## `Drop` runs when a value goes out of scope; the order is deterministic (reverse declaration).
+struct Guard:
+    label: &'static str
+
+    impl Drop:
+        fn drop(self: inout):
+            print("drop {}", label)
+
+## A type that is `Clone` but not `Copy`: moving it is a move; copying it is `.clone()`.
+@derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)
+struct Tag:
+    name: String
+
+fn main():
+    a = Vec2 { x: 1.0, y: 2.0 }
+    b = Vec2 { x: 0.5, y: 0.5 }
+    print("{:?} {:?}", a + b, (a + b) * 2.0)     # Copy types: `a` and `b` are still usable
+    print("{}", a == b)
+
+    # Drop order: `late` is dropped first, then `early`.
+    early = Guard { label: "early" }
+    late = Guard { label: "late" }
+    _ = (early.label, late.label)
+    # An explicit early drop is a plain std function call.
+    inner = Guard { label: "inner" }
+    drop(inner)
+    print("after explicit drop")
+
+    # Derived ordering and hashing on a Clone-only type.
+    var tags = Vec::from([Tag { name: String::from("b") }, Tag { name: String::from("a") }])
+    tags.sort()
+    first = tags[0].clone()                        # explicit copy; `tags[0]` alone would try to move out
+    print("{first:?} {}", tags.iter().max().unwrap().name)

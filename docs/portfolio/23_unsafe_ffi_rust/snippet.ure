@@ -1,0 +1,57 @@
+##! 23 — The escape hatches: `unsafe:` blocks, raw pointers, `rust { }` item blocks,
+##! `extern "C"` FFI, and macros. `unsafe` is never inferred (§24); raw Rust is always available.
+
+## An `unsafe:` block is Rust's `unsafe { }`: the boundary is explicit and auditable.
+fn first_byte(bytes: [u8]) -> u8?:
+    if bytes.is_empty(): return None
+    ptr = bytes.as_ptr()
+    v = unsafe:
+        *ptr                                     # dereferencing a raw pointer needs `unsafe`
+    Some(v)
+
+## Anything Uredo does not model yet is written as Rust inside `rust { }` (§22.2): here an
+## `extern "C"` block calling libc's `abs`, and a `#[repr(C)]` type for FFI.
+rust {
+    #[repr(C)]
+    #[derive(Debug, Clone, Copy)]
+    pub struct CPoint { pub x: i32, pub y: i32 }
+
+    unsafe extern "C" {
+        fn abs(x: i32) -> i32;
+    }
+
+    pub fn c_abs(x: i32) -> i32 { unsafe { abs(x) } }
+}
+
+## Items from the block are ordinary Rust items: callable, but their signatures are opaque to
+## Uredo, so arguments are passed verbatim (D2).
+fn manhattan(p: CPoint) -> i32: c_abs(p.x) + c_abs(p.y)
+
+## A `macro_rules!` definition is Rust source; `macro_rules! name {` switches the lexer (D40).
+macro_rules! square {
+    ($e:expr) => { $e * $e };
+}
+
+fn main():
+    # A byte-string literal is already `&[u8; N]`. The call-site rule must pass a reference
+    # *expression* verbatim rather than wrap it (`&&[u8; 2]` does not coerce to `&[u8]`) —
+    # portfolio finding P1, see README.
+    print("{:?} {:?}", first_byte(b"hi"), first_byte(b""))
+    print("{}", manhattan(CPoint { x: -3, y: 4 }))
+    print("{}", square!(7))                       # invoked directly, like any Rust macro (D23)
+
+    # A statement-position Rust block: its `let`s stay inside; `?`/`return` would target the
+    # enclosing generated function (§22.3).
+    rust {
+        let mut v = vec![3, 1, 2];
+        v.sort_unstable();
+        println!("{v:?}");
+    }
+
+    # An expression-position Rust block needs a type annotation on its binding (§22.3).
+    len: usize = rust { std::mem::size_of::<CPoint>() }
+    print("CPoint is {len} bytes")
+
+    # Transmute-free bit casting is safe Rust; shown to contrast with the unsafe block above.
+    bits = 1.5f32.to_bits()
+    print("{bits:#x}")

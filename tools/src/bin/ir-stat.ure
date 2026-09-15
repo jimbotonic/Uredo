@@ -1,0 +1,110 @@
+##! Per-function instruction counts, opcode digests, alloca bytes and aliases in one LLVM IR file.
+##!
+##! `ir-compare` answers "are these two modules the same", and fails if any function differs; this
+##! answers "how big is each function, what is its opcode sequence, and is it an alias of another
+##! one". The §36 tail-`?` obligation needs both halves at once in one module pair: an equal opcode
+##! sequence (or an alias) for the same-type tail, and *no more* instructions than the baseline for
+##! the converting tail. Symbol names are reduced to their last path segment, length-prefixed as
+##! the v0 mangling writes them, so two crates of the same name can be compared.
+##!
+##! usage: ir-stat <file.ll> [name …]      (default: every defined function)
+##! output: `name<TAB>instructions<TAB>alloca_bytes<TAB>opcode_digest` per function, then
+##!         `alias <name> -> <name>` for each alias
+
+use std::collections::BTreeSet
+use std::fs
+use regex::Regex
+use sha1::{Digest, Sha1}
+
+## The last identifier of a mangled symbol, parsed by its length prefixes.
+fn last_segment(symbol: str) -> String:
+    hashed = Regex::new(r"^h[0-9a-f]{16}$").expect("the pattern")
+    sym: Vec<char> = symbol.trim_matches('"').chars().collect()
+    var parts: Vec<String> = Vec::new()
+    var i = 0
+    while i < sym.len():
+        if sym[i].is_ascii_digit():
+            var j = i
+            while j < sym.len() && sym[j].is_ascii_digit():
+                j += 1
+            digits: String = sym[i..j].iter().collect()
+            n = digits.parse::<usize>().unwrap_or(0)
+            if j + n <= sym.len():
+                parts.push(sym[j..j + n].iter().collect::<String>())
+                i = j + n
+                continue
+        i += 1
+    for part in parts.iter().rev():
+        if !hashed.is_match(part) && !part.starts_with('_'):
+            return part.clone()
+    symbol.trim_matches('"').to_string()
+
+struct Row:
+    name: String
+    instructions: usize
+    alloca_bytes: i64
+    digest: String
+
+fn main():
+    args: Vec<String> = std::env::args().skip(1).collect()
+    if args.is_empty():
+        eprint("usage: ir-stat <file.ll> [name …]")
+        std::process::exit(2)
+    wanted: BTreeSet<String> = args[1..].iter().map(s => s.clone()).collect()
+
+    define = Regex::new(r#"define .*?@("?[^("]+"?)\("#).expect("the pattern")
+    alias = Regex::new(r#"@("?[^"= ]+"?) = .*\balias\b.*@("?[^"()\s,]+"?)"#).expect("the pattern")
+    label = Regex::new(r#"^[A-Za-z0-9_.$"]+:$"#).expect("the pattern")
+    opcode = Regex::new(r"^(?:%[^ ]+ = )?(\w+)").expect("the pattern")
+    size = Regex::new(r"alloca \[(\d+) x i8\]").expect("the pattern")
+
+    var name: String? = None
+    var ops: Vec<String> = Vec::new()
+    var allocs: Vec<i64> = Vec::new()
+    var rows: Vec<Row> = Vec::new()
+    var aliases: Vec<(String, String)> = Vec::new()
+
+    for line in fs::read_to_string(&args[0]).expect("the IR file").lines():
+        if let Some(c) = define.captures(line):
+            name = Some(last_segment(&c[1]))
+            ops = Vec::new()
+            allocs = Vec::new()
+            continue
+        if let Some(c) = alias.captures(line):
+            aliases.push((last_segment(&c[1]), last_segment(&c[2])))
+            continue
+        if name.is_none():
+            continue
+        if line.starts_with('}'):
+            var hasher = Sha1::new()
+            hasher.update(ops.join(",").as_bytes())
+            digest = format("{:x}", hasher.finalize())
+            rows.push(Row {
+                name: name.clone().unwrap_or_default(),
+                instructions: ops.len(),
+                alloca_bytes: allocs.iter().sum(),
+                digest: digest.chars().take(12).collect::<String>(),
+            })
+            name = None
+            continue
+        s = line.split(';').next().unwrap_or("").trim()
+        if s.is_empty() || label.is_match(s):
+            continue
+        op = match opcode.captures(s):
+            Some(c):
+                c[1].to_string()
+            None:
+                s.split_whitespace().next().unwrap_or("").to_string()
+        if op == "alloca":
+            bytes = match size.captures(s):
+                Some(c): c[1].parse().unwrap_or(0)
+                None: 0
+            allocs.push(bytes)
+        ops.push(op)
+
+    for r in rows:
+        if wanted.is_empty() || wanted.contains(&r.name):
+            print("{}\t{}\t{}\t{}", r.name, r.instructions, r.alloca_bytes, r.digest)
+    for (from, to) in aliases:
+        if wanted.is_empty() || wanted.contains(from) || wanted.contains(to):
+            print("alias {from} -> {to}")

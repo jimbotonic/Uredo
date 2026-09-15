@@ -1,0 +1,24 @@
+##! 01 — Hello: the smallest Uredo program.
+##!
+##! `##!` is a module doc comment (Rust `//!`), `##` documents the next item (Rust `///`),
+##! and `#` is an ordinary comment. Attributes use `@` because `#` is taken.
+
+## The entry point. No `->` type means the function returns unit.
+## A colon ends the header; the body is the indented block. No braces, no semicolons.
+fn main():
+    # `print` is an intrinsic (not a macro): it lowers to `println!`.
+    # A string literal that is the direct argument of `print` is a Rust format string,
+    # so `{name}` captures a binding in scope — no allocation happens here.
+    name = "world"                  # immutable binding: `let name = "world";`  (type &'static str)
+    print("Hello, {name}!")
+
+    # Positional and named arguments work exactly as Rust's `format_args!`.
+    print("{} + {} = {}", 2, 3, 2 + 3)
+
+    # `format` returns an owned `String` — the allocation is visible in the name.
+    greeting: String = format("Hello again, {name}")
+    print(greeting)                 # `print(expr)` lowers to `println!("{}", expr)` and needs `Display`
+
+    # Debug output is just a Rust format spec inside the literal.
+    pair = (1, "two")
+    print("{pair:?}")

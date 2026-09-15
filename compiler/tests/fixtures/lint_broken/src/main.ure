@@ -1,0 +1,5 @@
+##! Fixture: a file `uredo lint` cannot lint, because Uredo itself rejects it (§27).
+
+fn main():
+    x = 1
+    x = 2

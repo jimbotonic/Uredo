@@ -1,0 +1,112 @@
+##! 25 — Advanced types: `PhantomData`, `?Sized`, `Cow`, `TryFrom`, `Index`/`IndexMut`, `Weak`,
+##! array repeat. None of this is new syntax: each is a std type or trait spelled as in Rust.
+##! What Uredo adds is what it adds everywhere — borrow-by-default parameters (§10.2), colon
+##! bodies, explicit receivers, and the call-site rules of §10.3.
+
+use std::borrow::Cow
+use std::cell::RefCell
+use std::convert::TryFrom
+use std::marker::PhantomData
+use std::ops::{Index, IndexMut}
+use std::rc::{Rc, Weak}
+
+## Typed identifiers: `PhantomData<T>` makes `Id<User>` and `Id<Order>` distinct types at zero
+## size. `@derive(Copy)` would add a `T: Copy` bound that `Id<User>` cannot meet, so the impls are
+## hand-written — and a hand-written `Copy` is invisible to the passing table (§10.1): `Id<User>`
+## is *not* known-Copy, so an `id: Id<User>` parameter is still a shared borrow (P3).
+struct Id<T>:
+    raw: u32
+    _marker: PhantomData<T>
+
+    fn new(raw: u32) -> Self: Id { raw, _marker: PhantomData }    # nested method (D45), inline body
+
+impl<T> Clone for Id<T>:
+    fn clone(self) -> Self: Id::new(self.raw)
+
+impl<T> Copy for Id<T>                     # marker impl: header without a colon (§6.3)
+
+enum User                                  # uninhabited marker types: only ever a type argument
+
+enum Order
+
+fn describe(id: Id<User>) -> String:       # fn describe(id: &Id<User>) — P3, see above
+    format("user#{}", id.raw)
+
+## `?Sized` lets a generic borrow accept unsized types (`str`, `[T]`). A `?Sized` bound is the one
+## bound the passing table reads: it keeps `x: T` a borrow, `&T` (D52), where P8 would pass by value.
+fn byte_len<T: AsRef<[u8]> + ?Sized>(x: T) -> usize:      # fn byte_len<T: …>(x: &T)
+    x.as_ref().len()
+
+## `Cow`: borrow when nothing changes, allocate only when something must. The return type says
+## both can happen; no clone is hidden. The `'_` is Rust's elided lifetime, tied to `s` (§9.7).
+fn normalize(s: str) -> Cow<'_, str>:
+    if s.contains(' '): Cow::Owned(s.replace(' ', "_")) else: Cow::Borrowed(s)   # same-line else (D49)
+
+## Fallible conversion: `TryFrom` is an ordinary trait impl. `format` is the intrinsic (§11.3).
+@derive(Debug, Clone, Copy, PartialEq)
+struct Percent(u8)
+
+impl TryFrom<u32> for Percent:
+    type Error = String
+    fn try_from(v: u32) -> Result<Self, Self::Error>:         # verbatim Result: `?` works on it (D30)
+        if v <= 100: Ok(Percent(v as u8)) else: Err(format("{} is not a percentage", v))
+
+## Operator traits (see 18): `Index`/`IndexMut` give a type the `[]` syntax. A tuple of scalars
+## is known-Copy (§10.1), so `(x, y)` is a by-value pattern parameter (P7); the receivers and the
+## reference return types are written, because the trait's signature has them.
+struct Grid:
+    w: usize
+    cells: Vec<u8>
+
+impl Index<(usize, usize)> for Grid:
+    type Output = u8
+    fn index(self, (x, y): (usize, usize)) -> &Self::Output: &self.cells[y * self.w + x]
+
+impl IndexMut<(usize, usize)> for Grid:
+    fn index_mut(self: inout, (x, y): (usize, usize)) -> &mut Self::Output:
+        &mut self.cells[y * self.w + x]
+
+## `Weak`: a parent pointer that does not keep the parent alive, breaking the cycle that
+## `Rc<RefCell<Node>>` in both directions would leak (compare 17).
+struct TreeNode:
+    name: String
+    parent: RefCell<Weak<TreeNode>>
+    children: RefCell<Vec<Rc<TreeNode>>>
+
+fn adopt(parent: Rc<TreeNode>, child: Rc<TreeNode>):      # both &Rc<TreeNode> (P3)
+    # `Rc::downgrade` and `Rc::clone` are Rust items: arguments go verbatim (§10.3), and in the
+    # body `parent`/`child` already *are* references, which is what these functions take.
+    *child.parent.borrow_mut() = Rc::downgrade(parent)
+    parent.children.borrow_mut().push(Rc::clone(child))
+
+fn main():
+    uid: Id<User> = Id::new(7)
+    oid: Id<Order> = Id::new(7)
+    print("{} order#{}", describe(uid), oid.raw)       # `describe(oid)` would be a type error
+    let copied = uid                                   # `Copy` impl: `uid` stays usable
+    print("{}", copied.raw + uid.raw)
+
+    # `x: T` with `?Sized` is `&T`, so the ordinary call-site rule applies (D47): the literal is
+    # already a reference and is passed verbatim (`T = str`, legal under `?Sized`); the `Vec`
+    # temporary gets `&` inserted (`T = Vec<u8>`).
+    print("{} {}", byte_len("héllo"), byte_len(Vec::from([1u8, 2, 3])))
+
+    for s in ["plain", "has space"]:                   # `s: &str`, but the binding is unannotated…
+        match normalize(s):                            # …so `&s` is inserted and `&&str` derefs once (§9.9)
+            Cow::Borrowed(b): print("borrowed {}", b)
+            Cow::Owned(o): print("owned {}", o)
+
+    for v in [42u32, 150]:
+        match Percent::try_from(v):
+            Ok(p): print("{:?}", p)
+            Err(e): print("error: {}", e)
+
+    var grid = Grid { w: 3, cells: Vec::from([0u8; 9]) }   # `[0u8; 9]`: array repeat, as in Rust
+    grid[(1, 2)] = 5                                        # IndexMut
+    print("cell {} of {}", grid[(1, 2)], grid.cells.len())  # Index
+
+    root = Rc::new(TreeNode { name: String::from("root"), parent: RefCell::new(Weak::new()), children: RefCell::new(Vec::new()) })
+    leaf = Rc::new(TreeNode { name: String::from("leaf"), parent: RefCell::new(Weak::new()), children: RefCell::new(Vec::new()) })
+    adopt(root, leaf)
+    parent_name = leaf.parent.borrow().upgrade().map(p => p.name.clone())   # `upgrade` may fail: `Option`
+    print("leaf's parent {:?}; root strong {} weak {}", parent_name, Rc::strong_count(&root), Rc::weak_count(&root))

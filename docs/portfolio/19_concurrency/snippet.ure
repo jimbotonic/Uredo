@@ -1,0 +1,52 @@
+##! 19 — Concurrency: threads, `move` closures, channels, `Arc<Mutex<T>>`, scoped threads.
+##! `Send`/`Sync` stay Rust's; Uredo neither hides nor bypasses them (§21).
+
+use std::sync::{Arc, Mutex, RwLock, mpsc}
+use std::thread
+
+fn main():
+    # A thread takes a closure that must own what it uses: `move` is written (D13).
+    handles: Vec<thread::JoinHandle<u64>> = (0..4u64).map(i => thread::spawn(move () =>
+        (i * 1000..(i + 1) * 1000).sum::<u64>()
+    )).collect()
+    total: u64 = handles.into_iter().map(h => h.join().unwrap()).sum()
+    print("total {total}")
+
+    # Channels: one sender clone per producer; the receiver's iterator ends when every sender
+    # is dropped. `let tx = tx.clone()` inside the loop is a *new binding* (D25), shadowing.
+    (tx, rx) = mpsc::channel::<String>()
+    for id in 0..3:
+        let tx = tx.clone()
+        thread::spawn(move () => tx.send(format("worker {id} done")).unwrap())
+    drop(tx)                                    # drop the original so the loop below terminates
+    var messages: Vec<String> = rx.iter().collect()
+    messages.sort()
+    print("{messages:?}")
+
+    # Shared mutable state: the lock and the atomic refcount are both spelled out.
+    counter = Arc::new(Mutex::new(0u32))
+    workers: Vec<thread::JoinHandle<()>> = (0..8)
+        .map(_ =>                                   # trailing block argument (D51) in a chain:
+            let counter = Arc::clone(&counter)      # `Arc::clone` is a Rust item: the `&` is written (D2)
+            thread::spawn(move () =>
+                var guard = counter.lock().unwrap()  # the guard is a `var`: `+=` through it mutates
+                *guard += 1
+            )
+        )                                           # the `)` sits at the `.map` line's indentation
+        .collect()
+    for w in take workers: w.join().unwrap()    # `take`: JoinHandle::join consumes the handle
+    print("counter {}", *counter.lock().unwrap())
+
+    # `RwLock`: many readers or one writer. Both guards are visible calls that can fail (poisoning),
+    # and each is released at the end of its statement.
+    config = Arc::new(RwLock::new(String::from("v1")))
+    *config.write().unwrap() = String::from("v2")
+    print("config {}", *config.read().unwrap())
+
+    # Scoped threads may borrow the stack: no `Arc`, no `move` needed for `data`.
+    data = Vec::from([1, 2, 3, 4, 5, 6])
+    (left, right) = data.split_at(3)
+    thread::scope(s =>                              # trailing block argument (D51)
+        s.spawn(() => print("left sum {}", left.iter().sum::<i32>()))
+        _ = s.spawn(() => print("right sum {}", right.iter().sum::<i32>()))   # a block's last expression is its
+    )                                                                        # value; `_ =` keeps the closure unit

@@ -1,0 +1,1145 @@
+{
+ "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+ "programs": [
+  {
+   "program": "01_hello",
+   "uredo": {
+    "allocations": 4,
+    "bytes": 1598,
+    "peak": 1598,
+    "size": 450928,
+    "stable": true,
+    "runs": [
+     [
+      4,
+      1598,
+      1598
+     ],
+     [
+      4,
+      1598,
+      1598
+     ],
+     [
+      4,
+      1598,
+      1598
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 4,
+    "bytes": 1598,
+    "peak": 1598,
+    "size": 450960,
+    "stable": true,
+    "runs": [
+     [
+      4,
+      1598,
+      1598
+     ],
+     [
+      4,
+      1598,
+      1598
+     ],
+     [
+      4,
+      1598,
+      1598
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 450928,
+   "over_baseline": false
+  },
+  {
+   "program": "02_numeric",
+   "uredo": {
+    "allocations": 7,
+    "bytes": 1750,
+    "peak": 1750,
+    "size": 475728,
+    "stable": true,
+    "runs": [
+     [
+      7,
+      1750,
+      1750
+     ],
+     [
+      7,
+      1750,
+      1750
+     ],
+     [
+      7,
+      1750,
+      1750
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 7,
+    "bytes": 1750,
+    "peak": 1750,
+    "size": 475760,
+    "stable": true,
+    "runs": [
+     [
+      7,
+      1750,
+      1750
+     ],
+     [
+      7,
+      1750,
+      1750
+     ],
+     [
+      7,
+      1750,
+      1750
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 475728,
+   "over_baseline": false
+  },
+  {
+   "program": "03_strings",
+   "uredo": {
+    "allocations": 28,
+    "bytes": 2927,
+    "peak": 2428,
+    "size": 505032,
+    "stable": true,
+    "runs": [
+     [
+      28,
+      2927,
+      2428
+     ],
+     [
+      28,
+      2927,
+      2428
+     ],
+     [
+      28,
+      2927,
+      2428
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 28,
+    "bytes": 2927,
+    "peak": 2428,
+    "size": 505136,
+    "stable": true,
+    "runs": [
+     [
+      28,
+      2927,
+      2428
+     ],
+     [
+      28,
+      2927,
+      2428
+     ],
+     [
+      28,
+      2927,
+      2428
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 505032,
+   "over_baseline": false
+  },
+  {
+   "program": "04_struct_crud",
+   "uredo": {
+    "allocations": 10,
+    "bytes": 1816,
+    "peak": 1811,
+    "size": 456248,
+    "stable": true,
+    "runs": [
+     [
+      10,
+      1816,
+      1811
+     ],
+     [
+      10,
+      1816,
+      1811
+     ],
+     [
+      10,
+      1816,
+      1811
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 10,
+    "bytes": 1816,
+    "peak": 1811,
+    "size": 456312,
+    "stable": true,
+    "runs": [
+     [
+      10,
+      1816,
+      1811
+     ],
+     [
+      10,
+      1816,
+      1811
+     ],
+     [
+      10,
+      1816,
+      1811
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 456248,
+   "over_baseline": false
+  },
+  {
+   "program": "05_enum_match",
+   "uredo": {
+    "allocations": 22,
+    "bytes": 2209,
+    "peak": 1833,
+    "size": 460016,
+    "stable": true,
+    "runs": [
+     [
+      22,
+      2209,
+      1833
+     ],
+     [
+      22,
+      2209,
+      1833
+     ],
+     [
+      22,
+      2209,
+      1833
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 22,
+    "bytes": 2209,
+    "peak": 1833,
+    "size": 460056,
+    "stable": true,
+    "runs": [
+     [
+      22,
+      2209,
+      1833
+     ],
+     [
+      22,
+      2209,
+      1833
+     ],
+     [
+      22,
+      2209,
+      1833
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 460016,
+   "over_baseline": false
+  },
+  {
+   "program": "06_optional",
+   "uredo": {
+    "allocations": 10,
+    "bytes": 1736,
+    "peak": 1725,
+    "size": 456128,
+    "stable": true,
+    "runs": [
+     [
+      10,
+      1736,
+      1725
+     ],
+     [
+      10,
+      1736,
+      1725
+     ],
+     [
+      10,
+      1736,
+      1725
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 10,
+    "bytes": 1736,
+    "peak": 1725,
+    "size": 455800,
+    "stable": true,
+    "runs": [
+     [
+      10,
+      1736,
+      1725
+     ],
+     [
+      10,
+      1736,
+      1725
+     ],
+     [
+      10,
+      1736,
+      1725
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 456128,
+   "over_baseline": false
+  },
+  {
+   "program": "07_file_reading",
+   "uredo": {
+    "allocations": 15,
+    "bytes": 10099,
+    "peak": 8792,
+    "size": 474904,
+    "stable": true,
+    "runs": [
+     [
+      15,
+      10099,
+      8792
+     ],
+     [
+      15,
+      10099,
+      8792
+     ],
+     [
+      15,
+      10099,
+      8792
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 15,
+    "bytes": 10099,
+    "peak": 8792,
+    "size": 474976,
+    "stable": true,
+    "runs": [
+     [
+      15,
+      10099,
+      8792
+     ],
+     [
+      15,
+      10099,
+      8792
+     ],
+     [
+      15,
+      10099,
+      8792
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 474904,
+   "over_baseline": false
+  },
+  {
+   "program": "08_json_serde",
+   "uredo": {
+    "allocations": 46,
+    "bytes": 5685,
+    "peak": 5576,
+    "size": 635728,
+    "stable": true,
+    "runs": [
+     [
+      46,
+      5685,
+      5576
+     ],
+     [
+      46,
+      5685,
+      5576
+     ],
+     [
+      46,
+      5685,
+      5576
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 46,
+    "bytes": 5685,
+    "peak": 5576,
+    "size": 636080,
+    "stable": true,
+    "runs": [
+     [
+      46,
+      5685,
+      5576
+     ],
+     [
+      46,
+      5685,
+      5576
+     ],
+     [
+      46,
+      5685,
+      5576
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 635728,
+   "over_baseline": false
+  },
+  {
+   "program": "09_error_from",
+   "uredo": {
+    "allocations": 8,
+    "bytes": 1595,
+    "peak": 1581,
+    "size": 453952,
+    "stable": true,
+    "runs": [
+     [
+      8,
+      1595,
+      1581
+     ],
+     [
+      8,
+      1595,
+      1581
+     ],
+     [
+      8,
+      1595,
+      1581
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 8,
+    "bytes": 1595,
+    "peak": 1581,
+    "size": 454000,
+    "stable": true,
+    "runs": [
+     [
+      8,
+      1595,
+      1581
+     ],
+     [
+      8,
+      1595,
+      1581
+     ],
+     [
+      8,
+      1595,
+      1581
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 453952,
+   "over_baseline": false
+  },
+  {
+   "program": "10_iterators",
+   "uredo": {
+    "allocations": 26,
+    "bytes": 2327,
+    "peak": 2159,
+    "size": 472912,
+    "stable": true,
+    "runs": [
+     [
+      26,
+      2327,
+      2159
+     ],
+     [
+      26,
+      2327,
+      2159
+     ],
+     [
+      26,
+      2327,
+      2159
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 26,
+    "bytes": 2327,
+    "peak": 2159,
+    "size": 468864,
+    "stable": true,
+    "runs": [
+     [
+      26,
+      2327,
+      2159
+     ],
+     [
+      26,
+      2327,
+      2159
+     ],
+     [
+      26,
+      2327,
+      2159
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 472912,
+   "over_baseline": false
+  },
+  {
+   "program": "11_generic",
+   "uredo": {
+    "allocations": 10,
+    "bytes": 1737,
+    "peak": 1673,
+    "size": 483512,
+    "stable": true,
+    "runs": [
+     [
+      10,
+      1737,
+      1673
+     ],
+     [
+      10,
+      1737,
+      1673
+     ],
+     [
+      10,
+      1737,
+      1673
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 10,
+    "bytes": 1737,
+    "peak": 1673,
+    "size": 483584,
+    "stable": true,
+    "runs": [
+     [
+      10,
+      1737,
+      1673
+     ],
+     [
+      10,
+      1737,
+      1673
+     ],
+     [
+      10,
+      1737,
+      1673
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 483512,
+   "over_baseline": false
+  },
+  {
+   "program": "12_trait_impl",
+   "uredo": {
+    "allocations": 11,
+    "bytes": 1676,
+    "peak": 1628,
+    "size": 481088,
+    "stable": true,
+    "runs": [
+     [
+      11,
+      1676,
+      1628
+     ],
+     [
+      11,
+      1676,
+      1628
+     ],
+     [
+      11,
+      1676,
+      1628
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 11,
+    "bytes": 1676,
+    "peak": 1628,
+    "size": 480552,
+    "stable": true,
+    "runs": [
+     [
+      11,
+      1676,
+      1628
+     ],
+     [
+      11,
+      1676,
+      1628
+     ],
+     [
+      11,
+      1676,
+      1628
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 481088,
+   "over_baseline": false
+  },
+  {
+   "program": "13_ownership",
+   "uredo": {
+    "allocations": 22,
+    "bytes": 2048,
+    "peak": 2006,
+    "size": 457096,
+    "stable": true,
+    "runs": [
+     [
+      22,
+      2048,
+      2006
+     ],
+     [
+      22,
+      2048,
+      2006
+     ],
+     [
+      22,
+      2048,
+      2006
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 22,
+    "bytes": 2048,
+    "peak": 1991,
+    "size": 458256,
+    "stable": true,
+    "runs": [
+     [
+      22,
+      2048,
+      1991
+     ],
+     [
+      22,
+      2048,
+      1991
+     ],
+     [
+      22,
+      2048,
+      1991
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": false,
+   "baseline_size": 457096,
+   "over_baseline": false
+  },
+  {
+   "program": "14_mutable_borrow",
+   "uredo": {
+    "allocations": 5,
+    "bytes": 1596,
+    "peak": 1596,
+    "size": 479680,
+    "stable": true,
+    "runs": [
+     [
+      5,
+      1596,
+      1596
+     ],
+     [
+      5,
+      1596,
+      1596
+     ],
+     [
+      5,
+      1596,
+      1596
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 5,
+    "bytes": 1596,
+    "peak": 1596,
+    "size": 479736,
+    "stable": true,
+    "runs": [
+     [
+      5,
+      1596,
+      1596
+     ],
+     [
+      5,
+      1596,
+      1596
+     ],
+     [
+      5,
+      1596,
+      1596
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 479680,
+   "over_baseline": false
+  },
+  {
+   "program": "15_shared_borrow",
+   "uredo": {
+    "allocations": 8,
+    "bytes": 1727,
+    "peak": 1727,
+    "size": 455464,
+    "stable": true,
+    "runs": [
+     [
+      8,
+      1727,
+      1727
+     ],
+     [
+      8,
+      1727,
+      1727
+     ],
+     [
+      8,
+      1727,
+      1727
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 8,
+    "bytes": 1727,
+    "peak": 1727,
+    "size": 455104,
+    "stable": true,
+    "runs": [
+     [
+      8,
+      1727,
+      1727
+     ],
+     [
+      8,
+      1727,
+      1727
+     ],
+     [
+      8,
+      1727,
+      1727
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 455464,
+   "over_baseline": false
+  },
+  {
+   "program": "16_async_http",
+   "uredo": {
+    "allocations": 30,
+    "bytes": 24806,
+    "peak": 23498,
+    "size": 855472,
+    "stable": true,
+    "runs": [
+     [
+      30,
+      24806,
+      23498
+     ],
+     [
+      30,
+      24806,
+      23498
+     ],
+     [
+      30,
+      24806,
+      23498
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 30,
+    "bytes": 24806,
+    "peak": 23498,
+    "size": 860736,
+    "stable": true,
+    "runs": [
+     [
+      30,
+      24806,
+      23498
+     ],
+     [
+      30,
+      24806,
+      23498
+     ],
+     [
+      30,
+      24806,
+      23498
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 855472,
+   "over_baseline": false
+  },
+  {
+   "program": "17_tokio",
+   "uredo": {
+    "allocations": 249,
+    "bytes": 64112,
+    "peak": 60472,
+    "size": 895216,
+    "stable": true,
+    "runs": [
+     [
+      249,
+      64112,
+      60472
+     ],
+     [
+      249,
+      64112,
+      60472
+     ],
+     [
+      249,
+      64112,
+      60472
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 249,
+    "bytes": 64112,
+    "peak": 60472,
+    "size": 899568,
+    "stable": true,
+    "runs": [
+     [
+      249,
+      64112,
+      60472
+     ],
+     [
+      249,
+      64112,
+      60472
+     ],
+     [
+      249,
+      64112,
+      60472
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 895216,
+   "over_baseline": false
+  },
+  {
+   "program": "18_rayon",
+   "uredo": {
+    "allocations": 204,
+    "bytes": 282990,
+    "peak": 280914,
+    "size": 702120,
+    "stable": true,
+    "runs": [
+     [
+      204,
+      282990,
+      280914
+     ],
+     [
+      204,
+      282990,
+      280914
+     ],
+     [
+      204,
+      282990,
+      280914
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 204,
+    "bytes": 282990,
+    "peak": 280914,
+    "size": 702696,
+    "stable": true,
+    "runs": [
+     [
+      204,
+      282990,
+      280914
+     ],
+     [
+      204,
+      282990,
+      280914
+     ],
+     [
+      204,
+      282990,
+      280914
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 702120,
+   "over_baseline": false
+  },
+  {
+   "program": "19_rs_module",
+   "uredo": {
+    "allocations": 7,
+    "bytes": 1636,
+    "peak": 1636,
+    "size": 480024,
+    "stable": true,
+    "runs": [
+     [
+      7,
+      1636,
+      1636
+     ],
+     [
+      7,
+      1636,
+      1636
+     ],
+     [
+      7,
+      1636,
+      1636
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 7,
+    "bytes": 1636,
+    "peak": 1636,
+    "size": 480056,
+    "stable": true,
+    "runs": [
+     [
+      7,
+      1636,
+      1636
+     ],
+     [
+      7,
+      1636,
+      1636
+     ],
+     [
+      7,
+      1636,
+      1636
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 480024,
+   "over_baseline": false
+  },
+  {
+   "program": "20_raw_rust",
+   "uredo": {
+    "allocations": 4,
+    "bytes": 11572,
+    "peak": 11572,
+    "size": 449208,
+    "stable": true,
+    "runs": [
+     [
+      4,
+      11572,
+      11572
+     ],
+     [
+      4,
+      11572,
+      11572
+     ],
+     [
+      4,
+      11572,
+      11572
+     ]
+    ]
+   },
+   "rust": {
+    "allocations": 4,
+    "bytes": 11572,
+    "peak": 11572,
+    "size": 449232,
+    "stable": true,
+    "runs": [
+     [
+      4,
+      11572,
+      11572
+     ],
+     [
+      4,
+      11572,
+      11572
+     ],
+     [
+      4,
+      11572,
+      11572
+     ]
+    ]
+   },
+   "stable": true,
+   "exceeds": [],
+   "pass": true,
+   "identical": true,
+   "baseline_size": 449208,
+   "over_baseline": false
+  }
+ ]
+}

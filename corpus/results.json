@@ -1,0 +1,839 @@
+{
+  "summary": {
+    "programs": 20,
+    "all_same_output": true,
+    "tokens_ure": 6210,
+    "tokens_rust": 7139,
+    "token_reduction_pct": 13.0,
+    "token_reduction_app_pct": 13.4,
+    "chars_ure": 17419,
+    "chars_rust": 18951,
+    "char_reduction_pct": 8.1,
+    "lines_ure": 600,
+    "lines_rust": 928,
+    "line_reduction_pct": 35.3,
+    "annotations_ure": 120,
+    "annotations_rust": 210,
+    "annotation_ratio": 0.571,
+    "sig_annotations_ure": 52,
+    "sig_annotations_rust": 109,
+    "sig_annotation_ratio": 0.477,
+    "hit": 64,
+    "params": 64,
+    "hit_rate_pct": 100.0,
+    "diagnostics_mapped": 4,
+    "diagnostics_total": 4,
+    "mapped_pct": 100.0,
+    "raw_rust_lines": 47,
+    "source_lines": 632,
+    "raw_rust_share_pct": 7.4
+  },
+  "checks": {
+    "token reduction \u2265 10% on application-style programs (1\u201315)": true,
+    "parameter annotations \u2264 \u00bd of idiomatic Rust's (signatures)": true,
+    "inference hit rate \u2265 90% on non-generic parameters": true,
+    "\u2265 80% of barrier diagnostics mapped": true
+  },
+  "programs": [
+    {
+      "program": "01_hello",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 5,
+        "nonws_chars": 130,
+        "tokens": 32,
+        "annotations": 0,
+        "fns": 1
+      },
+      "rust": {
+        "lines": 6,
+        "nonws_chars": 148,
+        "tokens": 39,
+        "annotations": 0,
+        "fns": 1
+      },
+      "generated": {
+        "lines": 6,
+        "nonws_chars": 169,
+        "tokens": 48,
+        "annotations": 0,
+        "fns": 1
+      },
+      "token_reduction_pct": 17.9,
+      "char_reduction_pct": 12.2,
+      "line_reduction_pct": 16.7,
+      "annotations_ure": 0,
+      "annotations_rust": 0,
+      "sig_annotations_ure": 0,
+      "sig_annotations_rust": 0,
+      "hit": 0,
+      "params": 0,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 5,
+      "stderr_head": ""
+    },
+    {
+      "program": "02_numeric",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 32,
+        "nonws_chars": 757,
+        "tokens": 301,
+        "annotations": 5,
+        "fns": 4
+      },
+      "rust": {
+        "lines": 47,
+        "nonws_chars": 836,
+        "tokens": 346,
+        "annotations": 7,
+        "fns": 4
+      },
+      "generated": {
+        "lines": 47,
+        "nonws_chars": 864,
+        "tokens": 358,
+        "annotations": 7,
+        "fns": 4
+      },
+      "token_reduction_pct": 13.0,
+      "char_reduction_pct": 9.4,
+      "line_reduction_pct": 31.9,
+      "annotations_ure": 5,
+      "annotations_rust": 7,
+      "sig_annotations_ure": 0,
+      "sig_annotations_rust": 1,
+      "hit": 4,
+      "params": 4,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 32,
+      "stderr_head": ""
+    },
+    {
+      "program": "03_strings",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 31,
+        "nonws_chars": 1054,
+        "tokens": 359,
+        "annotations": 7,
+        "fns": 4
+      },
+      "rust": {
+        "lines": 48,
+        "nonws_chars": 1116,
+        "tokens": 400,
+        "annotations": 9,
+        "fns": 4
+      },
+      "generated": {
+        "lines": 48,
+        "nonws_chars": 1139,
+        "tokens": 411,
+        "annotations": 11,
+        "fns": 4
+      },
+      "token_reduction_pct": 10.2,
+      "char_reduction_pct": 5.6,
+      "line_reduction_pct": 35.4,
+      "annotations_ure": 7,
+      "annotations_rust": 9,
+      "sig_annotations_ure": 0,
+      "sig_annotations_rust": 3,
+      "hit": 3,
+      "params": 3,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 31,
+      "stderr_head": ""
+    },
+    {
+      "program": "04_struct_crud",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 44,
+        "nonws_chars": 1094,
+        "tokens": 413,
+        "annotations": 7,
+        "fns": 8
+      },
+      "rust": {
+        "lines": 71,
+        "nonws_chars": 1208,
+        "tokens": 487,
+        "annotations": 16,
+        "fns": 8
+      },
+      "generated": {
+        "lines": 71,
+        "nonws_chars": 1259,
+        "tokens": 507,
+        "annotations": 16,
+        "fns": 8
+      },
+      "token_reduction_pct": 15.2,
+      "char_reduction_pct": 9.4,
+      "line_reduction_pct": 38.0,
+      "annotations_ure": 7,
+      "annotations_rust": 16,
+      "sig_annotations_ure": 5,
+      "sig_annotations_rust": 13,
+      "hit": 6,
+      "params": 6,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 44,
+      "stderr_head": ""
+    },
+    {
+      "program": "05_enum_match",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 31,
+        "nonws_chars": 975,
+        "tokens": 353,
+        "annotations": 4,
+        "fns": 3
+      },
+      "rust": {
+        "lines": 48,
+        "nonws_chars": 1109,
+        "tokens": 410,
+        "annotations": 7,
+        "fns": 3
+      },
+      "generated": {
+        "lines": 48,
+        "nonws_chars": 1168,
+        "tokens": 434,
+        "annotations": 8,
+        "fns": 3
+      },
+      "token_reduction_pct": 13.9,
+      "char_reduction_pct": 12.1,
+      "line_reduction_pct": 35.4,
+      "annotations_ure": 4,
+      "annotations_rust": 7,
+      "sig_annotations_ure": 0,
+      "sig_annotations_rust": 2,
+      "hit": 1,
+      "params": 1,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 31,
+      "stderr_head": ""
+    },
+    {
+      "program": "06_optional",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 42,
+        "nonws_chars": 1372,
+        "tokens": 476,
+        "annotations": 12,
+        "fns": 6
+      },
+      "rust": {
+        "lines": 63,
+        "nonws_chars": 1501,
+        "tokens": 541,
+        "annotations": 20,
+        "fns": 6
+      },
+      "generated": {
+        "lines": 67,
+        "nonws_chars": 1661,
+        "tokens": 600,
+        "annotations": 21,
+        "fns": 6
+      },
+      "token_reduction_pct": 12.0,
+      "char_reduction_pct": 8.6,
+      "line_reduction_pct": 33.3,
+      "annotations_ure": 12,
+      "annotations_rust": 20,
+      "sig_annotations_ure": 9,
+      "sig_annotations_rust": 13,
+      "hit": 7,
+      "params": 7,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 42,
+      "stderr_head": ""
+    },
+    {
+      "program": "07_file_reading",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 33,
+        "nonws_chars": 964,
+        "tokens": 308,
+        "annotations": 12,
+        "fns": 4
+      },
+      "rust": {
+        "lines": 41,
+        "nonws_chars": 1064,
+        "tokens": 378,
+        "annotations": 12,
+        "fns": 4
+      },
+      "generated": {
+        "lines": 41,
+        "nonws_chars": 1298,
+        "tokens": 455,
+        "annotations": 12,
+        "fns": 4
+      },
+      "token_reduction_pct": 18.5,
+      "char_reduction_pct": 9.4,
+      "line_reduction_pct": 19.5,
+      "annotations_ure": 12,
+      "annotations_rust": 12,
+      "sig_annotations_ure": 3,
+      "sig_annotations_rust": 3,
+      "hit": 3,
+      "params": 3,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 33,
+      "stderr_head": ""
+    },
+    {
+      "program": "08_json_serde",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 30,
+        "nonws_chars": 973,
+        "tokens": 270,
+        "annotations": 4,
+        "fns": 2
+      },
+      "rust": {
+        "lines": 47,
+        "nonws_chars": 1035,
+        "tokens": 318,
+        "annotations": 7,
+        "fns": 2
+      },
+      "generated": {
+        "lines": 47,
+        "nonws_chars": 1103,
+        "tokens": 342,
+        "annotations": 7,
+        "fns": 2
+      },
+      "token_reduction_pct": 15.1,
+      "char_reduction_pct": 6.0,
+      "line_reduction_pct": 36.2,
+      "annotations_ure": 4,
+      "annotations_rust": 7,
+      "sig_annotations_ure": 0,
+      "sig_annotations_rust": 1,
+      "hit": 1,
+      "params": 1,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 30,
+      "stderr_head": ""
+    },
+    {
+      "program": "09_error_from",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 37,
+        "nonws_chars": 1036,
+        "tokens": 350,
+        "annotations": 6,
+        "fns": 5
+      },
+      "rust": {
+        "lines": 55,
+        "nonws_chars": 1155,
+        "tokens": 410,
+        "annotations": 12,
+        "fns": 5
+      },
+      "generated": {
+        "lines": 54,
+        "nonws_chars": 1307,
+        "tokens": 457,
+        "annotations": 12,
+        "fns": 5
+      },
+      "token_reduction_pct": 14.6,
+      "char_reduction_pct": 10.3,
+      "line_reduction_pct": 32.7,
+      "annotations_ure": 6,
+      "annotations_rust": 12,
+      "sig_annotations_ure": 6,
+      "sig_annotations_rust": 11,
+      "hit": 5,
+      "params": 5,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 37,
+      "stderr_head": ""
+    },
+    {
+      "program": "10_iterators",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 37,
+        "nonws_chars": 1323,
+        "tokens": 494,
+        "annotations": 2,
+        "fns": 2
+      },
+      "rust": {
+        "lines": 68,
+        "nonws_chars": 1402,
+        "tokens": 544,
+        "annotations": 4,
+        "fns": 2
+      },
+      "generated": {
+        "lines": 68,
+        "nonws_chars": 1458,
+        "tokens": 569,
+        "annotations": 4,
+        "fns": 2
+      },
+      "token_reduction_pct": 9.2,
+      "char_reduction_pct": 5.6,
+      "line_reduction_pct": 45.6,
+      "annotations_ure": 2,
+      "annotations_rust": 4,
+      "sig_annotations_ure": 0,
+      "sig_annotations_rust": 1,
+      "hit": 1,
+      "params": 1,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 37,
+      "stderr_head": ""
+    },
+    {
+      "program": "11_generic",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 32,
+        "nonws_chars": 899,
+        "tokens": 378,
+        "annotations": 5,
+        "fns": 9
+      },
+      "rust": {
+        "lines": 58,
+        "nonws_chars": 1007,
+        "tokens": 438,
+        "annotations": 14,
+        "fns": 9
+      },
+      "generated": {
+        "lines": 61,
+        "nonws_chars": 1105,
+        "tokens": 475,
+        "annotations": 14,
+        "fns": 9
+      },
+      "token_reduction_pct": 13.7,
+      "char_reduction_pct": 10.7,
+      "line_reduction_pct": 44.8,
+      "annotations_ure": 5,
+      "annotations_rust": 14,
+      "sig_annotations_ure": 3,
+      "sig_annotations_rust": 9,
+      "hit": 0,
+      "params": 0,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 32,
+      "stderr_head": ""
+    },
+    {
+      "program": "12_trait_impl",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 32,
+        "nonws_chars": 883,
+        "tokens": 337,
+        "annotations": 2,
+        "fns": 12
+      },
+      "rust": {
+        "lines": 57,
+        "nonws_chars": 970,
+        "tokens": 392,
+        "annotations": 14,
+        "fns": 12
+      },
+      "generated": {
+        "lines": 56,
+        "nonws_chars": 1015,
+        "tokens": 412,
+        "annotations": 14,
+        "fns": 12
+      },
+      "token_reduction_pct": 14.0,
+      "char_reduction_pct": 9.0,
+      "line_reduction_pct": 43.9,
+      "annotations_ure": 2,
+      "annotations_rust": 14,
+      "sig_annotations_ure": 2,
+      "sig_annotations_rust": 13,
+      "hit": 2,
+      "params": 2,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 32,
+      "stderr_head": ""
+    },
+    {
+      "program": "13_ownership",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 36,
+        "nonws_chars": 970,
+        "tokens": 336,
+        "annotations": 10,
+        "fns": 7
+      },
+      "rust": {
+        "lines": 66,
+        "nonws_chars": 1044,
+        "tokens": 381,
+        "annotations": 9,
+        "fns": 7
+      },
+      "generated": {
+        "lines": 66,
+        "nonws_chars": 1080,
+        "tokens": 397,
+        "annotations": 10,
+        "fns": 7
+      },
+      "token_reduction_pct": 11.8,
+      "char_reduction_pct": 7.1,
+      "line_reduction_pct": 45.5,
+      "annotations_ure": 10,
+      "annotations_rust": 9,
+      "sig_annotations_ure": 7,
+      "sig_annotations_rust": 6,
+      "hit": 5,
+      "params": 5,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 36,
+      "stderr_head": ""
+    },
+    {
+      "program": "14_mutable_borrow",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 36,
+        "nonws_chars": 706,
+        "tokens": 278,
+        "annotations": 11,
+        "fns": 6
+      },
+      "rust": {
+        "lines": 50,
+        "nonws_chars": 801,
+        "tokens": 341,
+        "annotations": 24,
+        "fns": 6
+      },
+      "generated": {
+        "lines": 50,
+        "nonws_chars": 824,
+        "tokens": 355,
+        "annotations": 28,
+        "fns": 6
+      },
+      "token_reduction_pct": 18.5,
+      "char_reduction_pct": 11.9,
+      "line_reduction_pct": 28.0,
+      "annotations_ure": 11,
+      "annotations_rust": 24,
+      "sig_annotations_ure": 5,
+      "sig_annotations_rust": 11,
+      "hit": 7,
+      "params": 7,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 36,
+      "stderr_head": ""
+    },
+    {
+      "program": "15_shared_borrow",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 24,
+        "nonws_chars": 804,
+        "tokens": 327,
+        "annotations": 10,
+        "fns": 7
+      },
+      "rust": {
+        "lines": 38,
+        "nonws_chars": 862,
+        "tokens": 365,
+        "annotations": 21,
+        "fns": 7
+      },
+      "generated": {
+        "lines": 38,
+        "nonws_chars": 927,
+        "tokens": 392,
+        "annotations": 21,
+        "fns": 7
+      },
+      "token_reduction_pct": 10.4,
+      "char_reduction_pct": 6.7,
+      "line_reduction_pct": 36.8,
+      "annotations_ure": 10,
+      "annotations_rust": 21,
+      "sig_annotations_ure": 9,
+      "sig_annotations_rust": 16,
+      "hit": 8,
+      "params": 8,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 24,
+      "stderr_head": ""
+    },
+    {
+      "program": "16_async_http",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 29,
+        "nonws_chars": 1233,
+        "tokens": 357,
+        "annotations": 8,
+        "fns": 3
+      },
+      "rust": {
+        "lines": 50,
+        "nonws_chars": 1316,
+        "tokens": 426,
+        "annotations": 12,
+        "fns": 3
+      },
+      "generated": {
+        "lines": 50,
+        "nonws_chars": 1496,
+        "tokens": 483,
+        "annotations": 12,
+        "fns": 3
+      },
+      "token_reduction_pct": 16.2,
+      "char_reduction_pct": 6.3,
+      "line_reduction_pct": 42.0,
+      "annotations_ure": 8,
+      "annotations_rust": 12,
+      "sig_annotations_ure": 1,
+      "sig_annotations_rust": 2,
+      "hit": 3,
+      "params": 3,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 29,
+      "stderr_head": ""
+    },
+    {
+      "program": "17_tokio",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 29,
+        "nonws_chars": 821,
+        "tokens": 286,
+        "annotations": 5,
+        "fns": 3
+      },
+      "rust": {
+        "lines": 41,
+        "nonws_chars": 845,
+        "tokens": 310,
+        "annotations": 3,
+        "fns": 3
+      },
+      "generated": {
+        "lines": 42,
+        "nonws_chars": 901,
+        "tokens": 330,
+        "annotations": 3,
+        "fns": 3
+      },
+      "token_reduction_pct": 7.7,
+      "char_reduction_pct": 2.8,
+      "line_reduction_pct": 29.3,
+      "annotations_ure": 5,
+      "annotations_rust": 3,
+      "sig_annotations_ure": 1,
+      "sig_annotations_rust": 0,
+      "hit": 2,
+      "params": 2,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 29,
+      "stderr_head": ""
+    },
+    {
+      "program": "18_rayon",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 23,
+        "nonws_chars": 621,
+        "tokens": 229,
+        "annotations": 2,
+        "fns": 4
+      },
+      "rust": {
+        "lines": 33,
+        "nonws_chars": 667,
+        "tokens": 259,
+        "annotations": 4,
+        "fns": 4
+      },
+      "generated": {
+        "lines": 33,
+        "nonws_chars": 695,
+        "tokens": 271,
+        "annotations": 4,
+        "fns": 4
+      },
+      "token_reduction_pct": 11.6,
+      "char_reduction_pct": 6.9,
+      "line_reduction_pct": 30.3,
+      "annotations_ure": 2,
+      "annotations_rust": 4,
+      "sig_annotations_ure": 0,
+      "sig_annotations_rust": 1,
+      "hit": 3,
+      "params": 3,
+      "misses": [],
+      "raw_rust_lines": 0,
+      "source_lines": 23,
+      "stderr_head": ""
+    },
+    {
+      "program": "19_rs_module",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 11,
+        "nonws_chars": 262,
+        "tokens": 107,
+        "annotations": 5,
+        "fns": 1
+      },
+      "rust": {
+        "lines": 13,
+        "nonws_chars": 302,
+        "tokens": 121,
+        "annotations": 6,
+        "fns": 1
+      },
+      "generated": {
+        "lines": 13,
+        "nonws_chars": 337,
+        "tokens": 137,
+        "annotations": 6,
+        "fns": 1
+      },
+      "token_reduction_pct": 11.6,
+      "char_reduction_pct": 13.2,
+      "line_reduction_pct": 15.4,
+      "annotations_ure": 5,
+      "annotations_rust": 6,
+      "sig_annotations_ure": 0,
+      "sig_annotations_rust": 0,
+      "hit": 0,
+      "params": 0,
+      "misses": [],
+      "raw_rust_lines": 31,
+      "source_lines": 42,
+      "stderr_head": ""
+    },
+    {
+      "program": "20_raw_rust",
+      "same_output": true,
+      "uredo_rc": 0,
+      "rust_rc": 0,
+      "ure": {
+        "lines": 26,
+        "nonws_chars": 542,
+        "tokens": 219,
+        "annotations": 3,
+        "fns": 4
+      },
+      "rust": {
+        "lines": 28,
+        "nonws_chars": 563,
+        "tokens": 233,
+        "annotations": 9,
+        "fns": 4
+      },
+      "generated": {
+        "lines": 30,
+        "nonws_chars": 579,
+        "tokens": 241,
+        "annotations": 9,
+        "fns": 4
+      },
+      "token_reduction_pct": 6.0,
+      "char_reduction_pct": 3.7,
+      "line_reduction_pct": 7.1,
+      "annotations_ure": 3,
+      "annotations_rust": 9,
+      "sig_annotations_ure": 1,
+      "sig_annotations_rust": 3,
+      "hit": 3,
+      "params": 3,
+      "misses": [],
+      "raw_rust_lines": 16,
+      "source_lines": 27,
+      "stderr_head": ""
+    }
+  ]
+}

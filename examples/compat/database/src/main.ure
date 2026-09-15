@@ -1,0 +1,51 @@
+##! §35 compatibility entry: **a database crate whose macros are checked at compile time** (SQLx).
+##! §35 lists this entry's query macros as raw by design. Two halves are testable here and one is
+##! not: the runtime API is ordinary Uredo, the macro body reaches rustc as opaque tokens (§22.5),
+##! and the compile-time-checked form (`sqlx::query!`) needs a live database or a prepared offline
+##! cache *while the crate is compiled*, which no fixture can provide from source alone.
+
+@!default_error(sqlx::Error)
+
+use sqlx::Row
+use sqlx::sqlite::SqlitePoolOptions
+
+@derive(Debug)
+struct Widget:
+    id: i64
+    name: String
+
+## The runtime API: a builder, a query, and rows decoded by hand. No `take`, no borrow written.
+async fn setup() -> sqlx::SqlitePool throws:
+    pool = SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await?
+    sqlx::query("create table widget (id integer primary key, name text not null)").execute(&pool).await?
+    for name in ["bolt", "nut", "washer"]:
+        sqlx::query("insert into widget (name) values (?)").bind(name).execute(&pool).await?
+    pool
+
+async fn widgets(pool: &sqlx::SqlitePool) -> Vec<Widget> throws:
+    rows = sqlx::query("select id, name from widget order by id").fetch_all(pool).await?
+    var out = Vec::new()
+    for row in rows:
+        out.push(Widget { id: row.try_get("id")?, name: row.try_get("name")? })
+    out
+
+## `query_as` with a type parameter: P8 passes the type argument, and the row type is Uredo's.
+async fn names(pool: &sqlx::SqlitePool) -> Vec<String> throws:
+    rows: Vec<(i64, String)> = sqlx::query_as("select id, name from widget order by name").fetch_all(pool).await?
+    rows.into_iter().map(r => r.1).collect()
+
+## The compile-time-checked form: `sqlx::query!` connects to `DATABASE_URL` *while this crate is
+## compiled* and checks the statement against the real schema. Uredo hands the macro body to rustc
+## as opaque tokens (§22.5), which is all it has to do — but the build script has to have made the
+## database first, which is why §35 lists this entry as raw by design.
+async fn checked_names(pool: &sqlx::SqlitePool) -> Vec<String> throws:
+    rows = sqlx::query!("select name from widget order by name").fetch_all(pool).await?
+    rows.into_iter().map(r => r.name).collect()
+
+@rust(tokio::main(flavor = "current_thread"))
+async fn main() throws:
+    pool = setup().await?
+    all = widgets(&pool).await?
+    print("{} {}", all.len(), all[0].name)
+    print("{:?}", names(&pool).await?)
+    print("{:?}", checked_names(&pool).await?)

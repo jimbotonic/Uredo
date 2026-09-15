@@ -1,0 +1,11 @@
+##! A two-file Uredo package: `greet.ure` is module `crate::greet` (§20.3), declared automatically.
+
+use greet::Greeting
+
+fn main():
+    g = Greeting::new("world")
+    print(g.render())
+    var count = 0
+    for name in ["ada", "bob"]:
+        count += 1
+        print("{count}: {}", greet::shout(name))

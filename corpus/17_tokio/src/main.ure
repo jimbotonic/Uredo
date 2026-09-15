@@ -1,0 +1,34 @@
+##! 17. Tokio program: tasks, an mpsc channel, a timeout, joining results.
+
+use std::time::Duration
+use tokio::sync::mpsc
+use tokio::time::{sleep, timeout}
+
+async fn worker(id: u32, tx: take mpsc::Sender<String>):   # the task owns its sender
+    for round in 0..3:
+        sleep(Duration::from_millis(1)).await
+        _ = tx.send(format("worker {id} round {round}")).await
+
+async fn slow() -> u32:
+    sleep(Duration::from_millis(50)).await
+    42
+
+@rust(tokio::main)
+async fn main():
+    (tx, receiver) = mpsc::channel::<String>(16)
+    var rx = receiver
+    var handles = Vec::new()
+    for id in 0..3:
+        handles.push(tokio::spawn(worker(id, tx.clone())))
+    drop(tx)
+    for h in take handles:                          # joining consumes the handles
+        h.await.expect("worker panicked")
+    var messages = Vec::new()
+    while let Some(m) = rx.recv().await:
+        messages.push(m)
+    messages.sort()
+    print("{} messages, first {:?}", messages.len(), messages[0])
+    match timeout(Duration::from_millis(5), slow()).await:
+        Ok(v): print("got {v}")
+        Err(_): print("timed out")
+    print("{}", timeout(Duration::from_millis(500), slow()).await.unwrap_or(0))

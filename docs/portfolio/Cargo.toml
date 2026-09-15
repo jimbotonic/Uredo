@@ -1,0 +1,88 @@
+[package]
+name = "uredo-portfolio"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Each topic folder holds `snippet.ure` (the Uredo source, heavily commented) and
+# `lowered.rs` (what the Uredo compiler would emit, also commented). Every lowered
+# file is a binary target so `cargo run --bin NN_topic` checks it.
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+
+[[bin]]
+name = "01_hello"
+path = "01_hello/lowered.rs"
+[[bin]]
+name = "02_bindings"
+path = "02_bindings/lowered.rs"
+[[bin]]
+name = "03_functions_control"
+path = "03_functions_control/lowered.rs"
+[[bin]]
+name = "04_strings_slices"
+path = "04_strings_slices/lowered.rs"
+[[bin]]
+name = "05_ownership_move"
+path = "05_ownership_move/lowered.rs"
+[[bin]]
+name = "06_borrowing"
+path = "06_borrowing/lowered.rs"
+[[bin]]
+name = "07_structs_methods"
+path = "07_structs_methods/lowered.rs"
+[[bin]]
+name = "08_enums_match"
+path = "08_enums_match/lowered.rs"
+[[bin]]
+name = "09_optionals"
+path = "09_optionals/lowered.rs"
+[[bin]]
+name = "10_errors"
+path = "10_errors/lowered.rs"
+[[bin]]
+name = "11_collections"
+path = "11_collections/lowered.rs"
+[[bin]]
+name = "12_closures_iterators"
+path = "12_closures_iterators/lowered.rs"
+[[bin]]
+name = "13_generics"
+path = "13_generics/lowered.rs"
+[[bin]]
+name = "14_traits"
+path = "14_traits/lowered.rs"
+[[bin]]
+name = "15_lifetimes"
+path = "15_lifetimes/lowered.rs"
+[[bin]]
+name = "16_modules"
+path = "16_modules/lowered.rs"
+[[bin]]
+name = "17_smart_pointers"
+path = "17_smart_pointers/lowered.rs"
+[[bin]]
+name = "18_operators_drop"
+path = "18_operators_drop/lowered.rs"
+[[bin]]
+name = "19_concurrency"
+path = "19_concurrency/lowered.rs"
+[[bin]]
+name = "20_patterns_advanced"
+path = "20_patterns_advanced/lowered.rs"
+[[bin]]
+name = "21_iterator_impl"
+path = "21_iterator_impl/lowered.rs"
+[[bin]]
+name = "22_async"
+path = "22_async/lowered.rs"
+[[bin]]
+name = "23_unsafe_ffi_rust"
+path = "23_unsafe_ffi_rust/lowered.rs"
+[[bin]]
+name = "24_testing"
+path = "24_testing/lowered.rs"
+[[bin]]
+name = "25_advanced_types"
+path = "25_advanced_types/lowered.rs"

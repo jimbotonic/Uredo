@@ -1,0 +1,33 @@
+##! 20. Inline raw Rust optimisation: a safe Uredo version and a `rust { }` block with unchecked indexing.
+
+fn checksum_safe(data: [u8]) -> u32:
+    var acc: u32 = 0
+    for b in data:
+        acc = acc.wrapping_mul(31).wrapping_add(*b as u32)
+    acc
+
+## The hot loop in raw Rust: `get_unchecked` skips bounds checks; the `unsafe` is visible and local.
+fn checksum_fast(data: [u8]) -> u32:
+    rust {
+        let mut acc: u32 = 0;
+        let mut i = 0;
+        while i < data.len() {
+            // SAFETY: i < data.len() is checked by the loop condition
+            acc = acc.wrapping_mul(31).wrapping_add(unsafe { *data.get_unchecked(i) } as u32);
+            i += 1;
+        }
+        acc
+    }
+
+rust {
+    pub fn popcount_all(words: &[u64]) -> u32 {
+        words.iter().map(|w| w.count_ones()).sum()
+    }
+}
+
+fn main():
+    data: Vec<u8> = (0..10_000u32).map(i => (i % 251) as u8).collect()
+    a = checksum_safe(data)
+    b = checksum_fast(data)
+    print("{a} {b} equal={}", a == b)
+    print("popcount {}", popcount_all(&[0xFFu64, 0x0F, 1]))

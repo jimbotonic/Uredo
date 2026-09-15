@@ -1,0 +1,20 @@
+##! §35 compatibility entry: **a build script**. The script is plain Rust and is copied beside the
+##! generated sources by `uredo package` (§4.6); what Uredo has to carry is the `include!` of its
+##! output and the environment variable it sets, both of which are Rust's own mechanisms and live in
+##! a `rust { }` block (§22.2) — there is nothing for the surface syntax to model.
+
+rust {
+    include!(concat!(env!("OUT_DIR"), "/table.rs"));
+}
+
+## `SQUARES` comes from the included file, so Uredo knows nothing about it: the `for` iterates it
+## as written and rustc decides what the item is — here a `u32`, since a `const` is a value.
+fn largest_square() -> u32:
+    var best = 0
+    for s in SQUARES:
+        if s > best: best = s
+    best
+
+fn main():
+    print("{} {}", SQUARES.len(), largest_square())
+    print("{}", env!("COMPAT_BUILD_STAMP"))

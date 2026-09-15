@@ -1,0 +1,36 @@
+##! Lines the formatter has to make a wrapping decision about, kept here because production code
+##! only sometimes contains them and the property test needs them always. Every construct below is
+##! legal Uredo that compiles; the test asserts it still does after formatting, and that the
+##! generated Rust is unchanged. §29.
+
+struct Reading:
+    piece: String
+    ratio: f64
+    conclusive: bool
+
+## A call whose last argument is a one-line `if … else`, wrapped: the colon after `if ok` is a
+## header colon at depth zero, but the line is a continuation and breaking it there is not a program.
+fn report(readings: [Reading]):
+    for r in readings:
+        print("{:<14} ratio {:.4}  upper {:.4}   controls: self {:.4} twin {:.4}   {}",
+            r.piece, r.ratio, r.ratio, r.ratio, r.ratio,
+            if r.conclusive: "pass" else if r.ratio > 1.0: "INCONCLUSIVE (the machine is too noisy)" else: "FAIL")
+
+## A signature over the limit, whose `<…>` colons are bounds rather than headers.
+fn widest<T: std::fmt::Display + Clone, U: std::fmt::Debug + Default>(first: T, second: U, third: T, fourth: U) -> String:
+    format("{first} {second:?} {third} {fourth:?}")
+
+## A match arm and a trailing block argument, both over the limit.
+fn classify(readings: [Reading]) -> Vec<String>:
+    readings.iter().map(r =>
+        match r.conclusive:
+            true: format("{} is conclusive at a ratio of {:.4}, which the budget of 1.02 admits", r.piece, r.ratio)
+            false: format("{} is not conclusive: the controls could not resolve two per cent this time", r.piece)
+    ).collect()
+
+fn main():
+    readings = Vec::from([Reading { piece: String::from("p1_human"), ratio: 0.9892, conclusive: true }])
+    report(readings)
+    print("{}", widest("a", 1u8, "b", 2u8))
+    for line in classify(readings):
+        print("{line}")

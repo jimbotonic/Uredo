@@ -1,0 +1,8 @@
+##! Fixture for `uredo report` (§5.4): the error is in the hand-written Rust module beside this
+##! file, not in anything the compiler generated, and the bundle must say so rather than blaming
+##! the lowering.
+
+pub mod helper
+
+fn main():
+    print("{}", helper::two())

@@ -1,0 +1,12 @@
+##! The integration-test target: a separate crate, so the library is reached by name and only its
+##! public surface is visible.
+
+use compat_targets::join
+
+@test
+fn join_across_the_crate_boundary():
+    assert_eq!(join("x", "y"), "x-y")
+
+@test
+fn join_is_not_symmetric():
+    assert!(join("x", "y") != join("y", "x"))

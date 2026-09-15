@@ -1,0 +1,6 @@
+##! The example target: `cargo run --example demo`, built by `cargo build --examples`.
+
+use compat_targets::join
+
+fn main():
+    print("{}", join("example", "target"))

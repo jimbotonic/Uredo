@@ -1,0 +1,9 @@
+##! A library written in Uredo, exported with `uredo package` and consumed from plain Rust (§4.6).
+
+pub mod shapes
+
+pub use shapes::{Circle, Rect}
+
+## Total area of a slice of rectangles: `[Rect]` is `&[Rect]` (P2).
+pub fn total_area(rects: [Rect]) -> f64:
+    rects.iter().map(r => r.area()).sum::<f64>()

@@ -1,0 +1,215 @@
+##! Mechanical checks over the language specification, before a human reads it.
+##!
+##! None of these judge the prose. They ask the questions a reader cannot answer without a script
+##! and a copy of the compiler: does every cross-reference point at a section that exists, does
+##! every decision row cite one, are the rows and the revision history in order, do the examples
+##! still lex, and — the one that matters most — does every section number the *compiler* prints
+##! in a diagnostic still exist.
+##!
+##! usage: spec-audit [spec.md]        (default: the current version)
+
+use std::collections::{BTreeMap, BTreeSet}
+use std::fs
+use std::path::{Path, PathBuf}
+use std::process::Command
+use regex::Regex
+
+## Everything the run has to say, in the order it was found.
+struct Problems:
+    found: Vec<String>
+
+impl Problems:
+    fn new() -> Problems:
+        Problems { found: Vec::new() }
+
+    fn report(self: inout, kind: str, detail: str):
+        self.found.push(format("{kind:<22} {detail}"))
+
+fn rx(pattern: str) -> Regex:
+    Regex::new(pattern).expect("the audit's own pattern")
+
+## The section numbers the document defines: `## 12.`, `### 12.3`, and §38's numbered questions,
+## which are table rows referred to by number exactly as a section is.
+fn sections(lines: [String]) -> BTreeSet<String>:
+    patterns = [rx(r"^#{2,4} (\d+(?:\.\d+)*)[. ]"), rx(r"^\| (\d+\.\d+) \|")]
+    var out = BTreeSet::new()
+    for line in lines:
+        for pattern in patterns:
+            if let Some(c) = pattern.captures(line):
+                out.insert(c[1].to_string())
+    out
+
+## Every `§n` in the document, with the lines it appears on.
+fn references(lines: [String]) -> BTreeMap<String, Vec<usize>>:
+    section_ref = rx(r"§(\d+(?:\.\d+)*)")
+    var refs: BTreeMap<String, Vec<usize>> = BTreeMap::new()
+    for (i, line) in lines.iter().enumerate():
+        for c in section_ref.captures_iter(line):
+            refs.entry(c[1].to_string()).or_default().push(i + 1)
+    refs
+
+## A decision row of the table in §0: its number, its text, and the line it is on.
+struct Decision:
+    number: u32
+    body: String
+    line: usize
+
+fn decisions(lines: [String]) -> Vec<Decision>:
+    row = rx(r"^\| D(\d+) \| (.*)$")
+    var out = Vec::new()
+    for (i, line) in lines.iter().enumerate():
+        if let Some(c) = row.captures(line):
+            out.push(Decision { number: c[1].parse().unwrap(), body: c[2].to_string(), line: i + 1 })
+    out
+
+## The rows must run in one direction, name every number once, and leave no gap.
+fn check_decision_order(rows: [Decision], problems: inout Problems):
+    numbers: Vec<u32> = rows.iter().map(d => d.number).collect()
+    var ascending = numbers.clone()
+    ascending.sort()
+    var descending = ascending.clone()
+    descending.reverse()
+    if numbers != ascending && numbers != descending:
+        broken: Vec<u32> = numbers
+            .windows(2)
+            .filter(w => w[0] + 1 != w[1] && w[1] + 1 != w[0])
+            .map(w => w[1])
+            .take(3)
+            .collect()
+        problems.report("decision rows", format("not in order around D{broken:?}"))
+    unique: BTreeSet<u32> = numbers.iter().copied().collect()
+    if unique.len() != numbers.len():
+        problems.report("decision rows", String::from("duplicate numbers"))
+    if let Some(highest) = numbers.iter().max():
+        gaps: Vec<u32> = (1..= *highest).filter(n => !unique.contains(n)).collect()
+        if !gaps.is_empty():
+            problems.report("decision rows", format("no row for D{gaps:?}"))
+
+## The revision history reads oldest first. Dates must not go backwards, and within one date the
+## lettered entries must not either; an entry with no letter is a consolidation, whose place is
+## stated in the entry itself, so it is not compared against its neighbours.
+fn check_history(lines: [String], problems: inout Problems) -> usize:
+    entry = rx(r"^- \*\*Revision (\d{4}-\d{2}-\d{2}[a-z]?)")
+    var history: Vec<(usize, String)> = Vec::new()
+    for (i, line) in lines.iter().enumerate():
+        if let Some(c) = entry.captures(line):
+            history.push((i + 1, c[1].to_string()))
+    for (which, keep_all) in [("date", true), ("letter", false)]:
+        var seen: Vec<(usize, String)> = Vec::new()
+        for (line, date) in history:
+            if keep_all:
+                seen.push((*line, date[..10].to_string()))
+            else if date.len() > 10:
+                seen.push((*line, date.clone()))
+        for pair in seen.windows(2):
+            if pair[0].1 > pair[1].1:
+                problems.report("revision history", format("{} out of order at line {}: {} before {}", which, pair[0].0, pair[0].1, pair[1].1))
+                break
+    history.len()
+
+## The one that matters most: a section number the compiler prints in a diagnostic, which the
+## document no longer has, is a promise the toolchain makes and the specification does not keep.
+fn cited_by_compiler(src: &Path) -> BTreeSet<String>:
+    section_ref = rx(r"§(\d+(?:\.\d+)*)")
+    var out = BTreeSet::new()
+    for entry in walkdir::WalkDir::new(src).into_iter().filter_map(e => e.ok()):
+        if entry.path().extension().map_or(false, e => e == "rs"):
+            if let Ok(text) = fs::read_to_string(entry.path()):
+                for c in section_ref.captures_iter(&text):
+                    out.insert(c[1].to_string())
+    out
+
+## Every fenced `uredo` block, lexed and then compiled by the compiler itself.
+fn check_examples(text: str, root: &Path, problems: inout Problems):
+    fence = rx(r"(?s)```uredo\n(.*?)```")
+    blocks: Vec<String> = fence.captures_iter(text).map(c => c[1].to_string()).collect()
+    binary = root.join("compiler/target/debug/uredo")
+    if !binary.exists():
+        print("examples: {} (the compiler is not built; none were run)", blocks.len())
+        return
+    scratch = std::env::temp_dir().join(format("uredo-audit-{}", std::process::id()))
+    fs::create_dir_all(&scratch).expect("a scratch directory")
+    var lexed = 0
+    var compiled = 0
+    for (i, block) in blocks.iter().enumerate():
+        path = scratch.join(format("example-{i}.ure"))
+        fs::write(&path, block).expect("write the example")
+        lex = Command::new(&binary).arg("rust").arg("--tokens").arg(&path).output().expect("run the compiler")
+        if lex.status.success() && !String::from_utf8_lossy(&lex.stderr).contains("error"):
+            lexed += 1
+        else:
+            first = block.trim().lines().next().unwrap_or("")
+            problems.report("example does not lex", first.chars().take(60).collect::<String>())
+        whole = Command::new(&binary).arg("rust").arg(&path).output().expect("run the compiler")
+        if whole.status.success():
+            compiled += 1
+    fs::remove_dir_all(&scratch).ok()
+    print("examples: {}, lexed {}, lowered to Rust that parses {}", blocks.len(), lexed, compiled)
+    print("  (lowering is not type-checking: `compiler/tests/manual.rs` runs rustc over the manual's examples;")
+    print("   these are only lowered, which is what `uredo rust` proves)")
+
+## The checkout, found by walking up from where the command was run until `compiler/src` appears.
+## It is deliberately not `CARGO_MANIFEST_DIR`: that names the *generated* crate under
+## `target/uredo`, as it must, since that is the crate rustc compiles and the one `uredo package`
+## exports (§25). Nor is it derived from the argument, so that auditing a copy of the document
+## still checks it against this checkout's compiler.
+fn repo_root() -> PathBuf:
+    var here = std::env::current_dir().unwrap_or_else(_e => PathBuf::from("."))
+    loop:
+        if here.join("compiler").join("src").is_dir():
+            return here
+        match here.parent():
+            Some(up):
+                here = up.to_path_buf()
+            None:
+                return PathBuf::from(".")
+
+fn main():
+    args: Vec<String> = std::env::args().skip(1).collect()
+    spec = match args.first():
+        Some(a): PathBuf::from(a)
+        None: PathBuf::from("docs/UREDO_LANGUAGE_SPEC_v0.4.md")
+    root = repo_root()
+    text = fs::read_to_string(&spec).expect("the specification")
+    lines: Vec<String> = text.split('\n').map(l => l.to_string()).collect()
+    var problems = Problems::new()
+
+    known = sections(lines)
+    print("sections: {}", known.len())
+
+    refs = references(lines)
+    occurrences: usize = refs.values().map(v => v.len()).sum()
+    print("references: {} distinct, {} occurrences", refs.len(), occurrences)
+    for (number, at) in refs:
+        if !known.contains(number):
+            where: Vec<String> = at.iter().take(4).map(l => l.to_string()).collect()
+            problems.report("dangling reference", format("§{} (lines {})", number, where.join(", ")))
+
+    rows = decisions(lines)
+    print("decision rows: {}", rows.len())
+    check_decision_order(rows, problems)
+    for row in rows:
+        cited: Vec<String> = rx(r"§(\d+(?:\.\d+)*)").captures_iter(&row.body).map(c => c[1].to_string()).collect()
+        if cited.is_empty():
+            problems.report("decision row", format("D{} cites no section (line {})", row.number, row.line))
+        for c in cited:
+            if !known.contains(c):
+                problems.report("decision row", format("D{} cites §{}, which does not exist (line {})", row.number, c, row.line))
+
+    print("revision entries: {}", check_history(lines, problems))
+
+    compiler = cited_by_compiler(&root.join("compiler/src"))
+    print("sections cited by the compiler: {}", compiler.len())
+    for c in compiler.difference(&known):
+        problems.report("compiler cites", format("§{}, which the specification does not have", c))
+
+    check_examples(text, &root, problems)
+
+    print("")
+    if problems.found.is_empty():
+        print("no problems found")
+    else:
+        print("{} problem(s):", problems.found.len())
+        for p in problems.found:
+            print("  {p}")
+        std::process::exit(1)

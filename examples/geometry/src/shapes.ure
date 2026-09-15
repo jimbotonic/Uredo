@@ -1,0 +1,23 @@
+## A rectangle; `@derive(Copy)` makes it known-Copy (§10.1), so it passes by value.
+@derive(Debug, Clone, Copy, PartialEq)
+pub struct Rect:
+    pub w: f64
+    pub h: f64
+
+    pub fn new(w: f64, h: f64) -> Self: Self { w, h }
+    pub fn area(self) -> f64: w * h
+    pub fn scale(self: inout, k: f64):
+        self.w *= k
+        self.h *= k
+
+## A circle with an owned label: not Copy, so it is borrowed by default (P3).
+@derive(Debug, Clone)
+pub struct Circle:
+    pub r: f64
+    pub label: String
+
+    pub fn area(self) -> f64: std::f64::consts::PI * r * r
+
+## Describes any circle; the caller passes `&Circle` (the auto-borrow of §10.3 is the callee's rule).
+pub fn describe(c: Circle) -> String:
+    format("{}: area {:.2}", c.label, c.area())

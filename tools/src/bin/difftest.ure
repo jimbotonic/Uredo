@@ -1,0 +1,47 @@
+##! Differential fuzz: identical inputs to the original and the generated crate, outputs compared.
+##!
+##! `tools/difftest/src/main.rs` is the harness; its manifest is written here, against crates
+##! `pieces` reconstructs, because the pieces are archived flat and there is nothing to depend on
+##! until they are rebuilt. Four pure pieces take part; p4 needs a trait object graph and p6 touches
+##! the filesystem.
+##!
+##! usage: difftest
+
+use std::fs
+use std::path::PathBuf
+use std::process::Command
+use uredo_tools::pieces::reconstruct
+
+fn main():
+    root = archive_root()
+    tools = root.join("tools")
+    work = root.join("target").join("difftest")
+    pieces = Vec::from(["p1_human", "p2_size", "p3_rand", "p5_sanitize"]).iter().map(s => s.to_string()).collect::<Vec<String>>()
+
+    crates = reconstruct(&root, &work, pieces, ["orig", "gen"], false, true)
+    harness = work.join("difftest")
+    fs::create_dir_all(harness.join("src")).expect("the harness directory")
+    fs::copy(tools.join("difftest/src/main.rs"), harness.join("src/main.rs")).expect("copy the harness")
+
+    var deps: Vec<String> = Vec::new()
+    for (piece, side) in crates.keys():
+        stem = piece.split('_').next().unwrap_or("p")
+        deps.push(format("{stem}_{side} = {{ path = \"../{piece}_{side}\" }}"))
+    manifest = format("[package]\nname = \"difftest\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n{}\n\n[workspace]\n", deps.join("\n"))
+    fs::write(harness.join("Cargo.toml"), manifest).expect("write the harness manifest")
+
+    status = Command::new("cargo").args(["run", "--release", "-q"]).current_dir(&harness).status().expect("run the harness")
+    std::process::exit(status.code().unwrap_or(1))
+
+## The round-trip archive, relative to the checkout this command was run in.
+fn archive_root() -> PathBuf:
+    var here = std::env::current_dir().unwrap_or_else(_e => PathBuf::from("."))
+    loop:
+        candidate = here.join("docs/corpus-study/roundtrip")
+        if candidate.is_dir():
+            return candidate
+        match here.parent():
+            Some(up):
+                here = up.to_path_buf()
+            None:
+                return PathBuf::from(".")

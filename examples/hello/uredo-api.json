@@ -1,0 +1,26 @@
+{
+  "package": "hello",
+  "uredo": "0.0.1",
+  "items": [
+    {
+      "path": "greet::Greeting",
+      "kind": "struct",
+      "signature": "pub struct Greeting"
+    },
+    {
+      "path": "greet::Greeting::new",
+      "kind": "method",
+      "signature": "fn new(name: &str) -> Self"
+    },
+    {
+      "path": "greet::Greeting::render",
+      "kind": "method",
+      "signature": "fn render(&self) -> String"
+    },
+    {
+      "path": "greet::shout",
+      "kind": "fn",
+      "signature": "fn shout(s: &str) -> String"
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+##! §35 compatibility entry: **operator traits and `Copy` on a foreign generic type** (nalgebra).
+##! The passing modes are already decided; this checks them against a real numeric API. A foreign
+##! type is not known-Copy unless this crate says so (§10.1), so the small vector and matrix types
+##! are declared with `@copy use`; the operators are the foreign crate's own trait impls (§12.3).
+
+@copy use nalgebra::Vector3<f64>
+@copy use nalgebra::Matrix3<f64>
+
+## Known-Copy through `@copy use`, so both parameters pass by value (P1) and the operators apply.
+fn combine(a: Vector3<f64>, b: Vector3<f64>) -> Vector3<f64>:
+    a + b * 2.0
+
+## A matrix is known-Copy too: by value in, by value out, no borrow written anywhere.
+fn transform(m: Matrix3<f64>, v: Vector3<f64>) -> Vector3<f64>:
+    m * v
+
+## The generic form: a type parameter passes by value (P8), and its bounds are the foreign crate's.
+fn scaled<T: Copy + std::ops::Mul<f64, Output = T>>(x: T, k: f64) -> T:
+    x * k
+
+fn main():
+    a = Vector3::new(1.0, 2.0, 3.0)
+    b = Vector3::new(0.5, 0.5, 0.5)
+    c = combine(a, b)
+    print("{} {} {}", c[0], c[1], c[2])
+
+    m = Matrix3::identity()
+    t = transform(m, c)
+    print("{} {}", t[0], t.norm() > 0.0)
+
+    print("{}", scaled(2.0, 3.0))
+    print("{}", a.dot(&b))

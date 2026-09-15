@@ -1,0 +1,68 @@
+##! §35 compatibility entry: **`no_std`**, which §35 itself defers to Phase 3. This fixture records
+##! how far the current surface gets: arithmetic, `T?`, `Result`, slices, iterators and `@derive`
+##! all lower to `core` paths, so a library that avoids the allocating parts of the language builds
+##! for a `no_std` crate today. What is *not* available is recorded in the entry, not hidden here.
+
+@!no_std
+
+## `T?` lowers to `::core::option::Option`, so an optional needs no allocator.
+pub fn first_even(values: [u32]) -> u32?:
+    for v in values:
+        if *v % 2 == 0: return Some(*v)
+    None
+
+@derive(Debug, Clone, Copy, PartialEq)
+pub struct Point:
+    x: i32
+    y: i32
+
+impl Point:
+    pub fn manhattan(self, other: Point) -> i32:
+        (self.x - other.x).abs() + (self.y - other.y).abs()
+
+## A fallible function over a `core` error type: the `throws` lowering is `::core::result::Result`.
+pub fn half(n: u32) -> u32 throws Overflow:
+    if n % 2 == 1: throw Overflow
+    n / 2
+
+@derive(Debug, PartialEq)
+pub struct Overflow
+
+@test
+fn arithmetic_and_optionals_work_without_std():
+    assert_eq!(first_even(&[1, 3, 4, 5]), Some(4))
+    assert_eq!(Point { x: 1, y: 2 }.manhattan(Point { x: 4, y: 6 }), 7)
+    assert_eq!(half(8), Ok(4))
+    assert_eq!(half(7), Err(Overflow))
+
+## The allocating half. A `no_std` crate reaches it through `alloc`, which is a crate rather than a
+## target feature: it needs an allocator the binary supplies, and it is where `Vec`, `String` and
+## `format!` live. Uredo's `format` intrinsic lowers to `::alloc::format!` here rather than
+## `::std::format!` (§11.3), because the module said `@!no_std` and the lowering reads that.
+rust {
+    extern crate alloc;
+}
+
+## The allocator and the panic handler a target with no operating system needs (`bare.ure`).
+mod bare
+
+use alloc::string::String
+use alloc::vec::Vec
+
+## `Vec` and `String` are `alloc`'s here, and are written exactly as they are with `std`.
+pub fn labels(points: [Point]) -> Vec<String>:
+    var out = Vec::new()
+    for p in points:
+        out.push(format("({}, {})", p.x, p.y))
+    out
+
+## Interpolation is the same surface (D5); only the macro it lowers to differs.
+pub fn describe(p: Point) -> String:
+    format("point at {}, {} is {} from the origin", p.x, p.y, p.manhattan(Point { x: 0, y: 0 }))
+
+@test
+fn the_allocating_half_works_through_alloc():
+    points = Vec::from([Point { x: 1, y: 2 }, Point { x: 3, y: 4 }])
+    # inside a macro the arguments are Rust's (§22.3), so the borrow is written
+    assert_eq!(labels(&points), Vec::from([String::from("(1, 2)"), String::from("(3, 4)")]))
+    assert_eq!(describe(Point { x: 1, y: 2 }), String::from("point at 1, 2 is 3 from the origin"))

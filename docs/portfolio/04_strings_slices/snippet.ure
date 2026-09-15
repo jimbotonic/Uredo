@@ -1,0 +1,40 @@
+##! 04 — Text and sequences: `str` vs `String`, arrays vs `Vec`, slices.
+##! The rule that organises all of it: nothing allocates unless the source says so (§3.2).
+
+## `str` in a parameter is `&str` (rule P2): borrowed text, no allocation.
+fn shout(s: str) -> String:
+    # Methods that return owned data are explicit about it in their names.
+    s.to_uppercase()
+
+## `[T]` in a parameter is `&[T]` (rule P2): a borrowed slice of any length.
+fn total(values: [i32]) -> i32:
+    values.iter().sum::<i32>()          # expression-position generics keep the turbofish (38.3)
+
+fn main():
+    # A string literal is `&'static str` and never allocates (§8.3).
+    literal = "borrowed text"
+    # Owned text is spelled out: the allocation is visible in the call.
+    owned: String = String::from("owned text")
+    also_owned = literal.to_string()
+    # Interpolation outside `print` needs `format`, which visibly returns a `String`.
+    joined = format("{literal} / {owned} / {also_owned}")
+    print(joined)
+    print(shout(literal))               # &str -> auto-borrow is a no-op; `&&str` would coerce anyway
+    print(shout(owned))                 # &String coerces to &str at the call (§9.9)
+
+    # `[…]` is a fixed-size stack array — never a hidden Vec (D4).
+    bytes = [1, 2, 3, 4]                # [i32; 4]
+    # A Vec is an allocation, so it is spelled: `Vec::from`, `vec![…]`, or an annotation.
+    numbers = Vec::from([10, 20, 30])   # Vec<i32>
+    more = vec![1, 2, 3]                # Rust's macro, invoked directly (D23)
+    typed: Vec<u8> = [7, 8, 9]          # the annotation makes the Vec visible
+    print("{} {} {} {}", total(bytes), total(numbers), total(more), typed.len())
+
+    # Slicing and indexing are Rust's; `&x[a..b]` is a borrowed slice.
+    head = &numbers[..2]
+    last = numbers[numbers.len() - 1]
+    print("{head:?} {last}")
+
+    # chars / bytes: UTF-8 rules are Rust's.
+    for c in "héllo".chars():
+        print("{c} {}", c.len_utf8())

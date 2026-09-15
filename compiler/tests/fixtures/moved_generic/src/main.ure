@@ -1,0 +1,9 @@
+##! Negative fixture (D52): an argument moved through a by-value generic parameter and reused.
+
+fn add_user<N: Into<String>>(name: N) -> String:
+    name.into()
+
+fn main():
+    name = String::from("ada")
+    u = add_user(name)               # P8: `name` is moved here
+    print("{u} {}", name.len())      # E0382: used after the move

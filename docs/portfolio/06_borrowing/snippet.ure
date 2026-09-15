@@ -1,0 +1,70 @@
+##! 06 — Borrowing by default: shared borrows, `inout`, call-site rules, `Copy`.
+##!
+##! The passing-modes table (§10.2) is decided from the declaration alone:
+##!   scalar / known-Copy   -> by value   (P1)
+##!   str / [T]             -> &str / &[T] (P2)
+##!   any other type        -> &T          (P3, shared borrow)
+##!   inout T               -> &mut T      (P4)
+##!   take T                -> T           (P5)
+##!   &T / &mut T / &'a T   -> as written  (P6)
+
+@derive(Debug, Default)
+struct Account:
+    owner: String
+    balance: f64
+
+## Shared borrow (P3): read-only access, no `&` written by the caller.
+fn report(acct: Account) -> String:
+    format("{} has {:.2}", acct.owner, acct.balance)
+
+## Mutable borrow (P4): the caller's binding must be `var`; the call site gets `&mut`.
+fn deposit(acct: inout Account, amount: f64):
+    acct.balance += amount
+
+## Two borrows in one signature: both shared, both zero-cost.
+fn richer(a: Account, b: Account) -> String:
+    if a.balance >= b.balance: a.owner.clone() else: b.owner.clone()
+
+## A struct that is known-Copy because it says so (§10.1): passed by value (P1).
+@derive(Clone, Copy, Debug)
+struct Point:
+    x: f64
+    y: f64
+
+fn length(p: Point) -> f64:          # fn length(p: Point): by value, the cheap thing
+    (p.x * p.x + p.y * p.y).sqrt()
+
+## Foreign Copy types from std are in the prelude Copy table (D20): by value too.
+fn plus_one_second(d: std::time::Duration) -> std::time::Duration:
+    d + std::time::Duration::from_secs(1)
+
+## A Copy type from another crate is declared once per crate with `@copy use` (D20). The generator
+## emits a `Copy` assertion, so a wrong declaration is a diagnostic, never a silent move. Nothing
+## else — not even a type rustc knows is Copy — is passed by value without such a declaration.
+@copy use tokio::time::Instant
+
+fn elapsed_ms(start: Instant) -> u128:                # fn elapsed_ms(start: Instant): by value (P1)
+    start.elapsed().as_millis()
+
+fn main():
+    var alice = Account { owner: String::from("alice"), balance: 10.0 }
+    bob = Account { owner: String::from("bob"), ..Account::default() }
+
+    print(report(alice))             # call site: report(&alice)
+    deposit(alice, 5.0)              # call site: deposit(&mut alice) — `alice` is `var`
+    # deposit(bob, 1.0)              # error: `bob` is immutable; `inout` needs a `var` binding
+    print("{}", richer(alice, bob))  # richer(&alice, &bob)
+
+    p = Point { x: 3.0, y: 4.0 }
+    print("{}", length(p))           # by value, `p` still usable:
+    print("{p:?}")
+
+    d = plus_one_second(std::time::Duration::from_secs(1))
+    started = Instant::now()
+    print("elapsed {} ms", elapsed_ms(started))          # `started` still usable: it was copied
+    print("{:?}", started.elapsed() < std::time::Duration::from_secs(1))
+    print("{d:?}")
+
+    # Calls into Rust items pass arguments verbatim (D2): you write `&` as in Rust.
+    joined = ["a", "b"].join(&String::from("-"))
+    print(joined)

@@ -1,0 +1,106 @@
+% Preamble for the PDF build of docs/MANUAL.md — see docs/pdf/build.sh.
+\usepackage[T1]{fontenc}
+\usepackage[default,semibold]{sourceserifpro}
+\usepackage[semibold]{sourcesanspro}
+\usepackage[scale=0.86]{sourcecodepro}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage{framed}
+\usepackage{fvextra}   % breaklines for the listings; plain fancyvrb cannot wrap
+\usepackage{enumitem}
+\usepackage{needspace}
+
+\definecolor{uredoink}{HTML}{1F2933}
+\definecolor{uredoaccent}{HTML}{8F3F0F}   % iron oxide: rust, the mineral and the language
+\definecolor{uredodeep}{HTML}{2B3A67}
+\definecolor{uredorule}{HTML}{D8D2C4}
+\definecolor{uredomuted}{HTML}{6B7480}
+
+\color{uredoink}
+
+% --- headings -----------------------------------------------------------------
+\titleformat{\section}
+  {\normalfont\sffamily\bfseries\huge\color{uredodeep}}{}{0pt}{}
+  [{\vspace{4pt}\color{uredorule}\titlerule[1pt]}]
+\titleformat{\subsection}{\normalfont\sffamily\bfseries\large\color{uredodeep}}{}{0pt}{}
+\titleformat{\subsubsection}{\normalfont\sffamily\bfseries\normalsize\color{uredodeep}}{}{0pt}{}
+\titlespacing*{\section}{0pt}{0pt}{22pt}
+\titlespacing*{\subsection}{0pt}{20pt}{8pt}
+% Each of the manual's nineteen chapters starts a page, and sets the running head. Both are
+% done by wrapping `\section` rather than through titlesec: this titlesec has no `\sectionbreak`
+% hook, and a `\markboth` placed in its before-code is typeset inside a box, where the output
+% routine never sees the mark. Pandoc emits plain `\section{...}` for every heading here.
+\let\uredoorigsection\section
+\renewcommand{\section}[1]{\clearpage\markboth{#1}{}\uredoorigsection{#1}}
+
+% --- running heads ------------------------------------------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\headrule}{\hbox to\headwidth{\color{uredorule}\leaders\hrule height \headrulewidth\hfill}}
+\fancyhead[L]{\footnotesize\sffamily\color{uredomuted}\nouppercase{\leftmark}}
+\fancyhead[R]{\footnotesize\sffamily\color{uredomuted}The Uredo manual}
+\fancyfoot[C]{\footnotesize\sffamily\color{uredomuted}\thepage}
+\fancypagestyle{plain}{\fancyhf{}\renewcommand{\headrulewidth}{0pt}%
+  \fancyfoot[C]{\footnotesize\sffamily\color{uredomuted}\thepage}}
+
+
+% --- code ---------------------------------------------------------------------
+% A left rule beside the shaded block, so a listing is visible as one object even
+% where it breaks across a page.
+\renewenvironment{Shaded}{%
+  \setlength{\topsep}{8pt}%
+  \def\FrameCommand{{\color{uredorule}\vrule width 2.5pt}\hspace{0pt}%
+    \fboxsep=8pt\colorbox{shadecolor}}%
+  \MakeFramed{\advance\hsize-\width\FrameRestore}}%
+  {\endMakeFramed}
+% A dozen lines in the manual are wider than any readable measure — the toolchain table's
+% longest row is 101 characters — so listings wrap rather than run into the margin, with a
+% hook in the gutter marking a continuation.
+% The longest listing in the manual is 26 lines and fits on a page with room to spare, so no
+% listing is allowed to break across one: a two-line widow of code stranded on the next page
+% reads as a separate example, which is worse than a short page.
+\fvset{samepage=true,
+       fontsize=\small, breaklines=true, breakanywhere=true, breakindent=1.6em,
+       breaksymbolleft={\hbox{\color{uredomuted}\footnotesize$\hookrightarrow$}},
+       breaksymbolsepleft=3pt}
+
+% --- lists and tables ---------------------------------------------------------
+\setlist[itemize]{itemsep=2pt, topsep=5pt, parsep=0pt}
+\setlist[enumerate]{itemsep=2pt, topsep=5pt, parsep=0pt}
+\renewcommand{\arraystretch}{1.18}
+
+% --- title page ---------------------------------------------------------------
+\renewcommand{\maketitle}{%
+  \begin{titlepage}
+  \thispagestyle{empty}
+  \raggedright
+  \vspace*{0.16\textheight}
+  {\sffamily\bfseries\fontsize{46}{50}\selectfont\color{uredodeep}The Uredo manual\par}
+  \vspace{10pt}
+  {\color{uredorule}\rule{\textwidth}{2pt}\par}
+  \vspace{16pt}
+  {\sffamily\fontsize{16}{22}\selectfont\color{uredoaccent}%
+   A Python-like surface syntax for Rust.\par
+   No runtime, no reimplementation --- readable Rust, and Cargo builds it.\par}
+  \vfill
+  {\sffamily\normalsize\color{uredomuted}%
+   Language specification v0.4\\[3pt]
+   \docdate\\[3pt]
+   Every example marked \textsf{uredo} compiles; a test in the compiler's suite
+   fails if one stops.\par}
+  \end{titlepage}
+  \cleardoublepage}
+
+% --- front matter -------------------------------------------------------------
+% The contents get their own page and their own numbering; the body starts at 1.
+% Also `numbersections=false` leaves the section counter running, which the table of
+% contents would otherwise print as `0.1`, `0.2`, … beside titles that already number
+% themselves.
+\setcounter{secnumdepth}{0}
+\let\uredotoc\tableofcontents
+\renewcommand{\tableofcontents}{%
+  \pagenumbering{roman}\uredotoc\clearpage\pagenumbering{arabic}}

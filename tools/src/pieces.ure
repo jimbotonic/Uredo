@@ -1,0 +1,72 @@
+##! Rebuild the archived round-trip pieces as the crates the pipeline needs.
+##!
+##! Each piece is kept flat — `original.rs`, `generated.rs`, `keep.rs`, the `.ure` and the manifest —
+##! so nothing there is buildable as it stands. Every tool that wants to compile a piece
+##! reconstructs it first, through this one function, so they cannot disagree about what "the
+##! original" and "the generated" mean.
+##!
+##!   orig   the piece as it was taken from its project, tests and all
+##!   gen    the lowering of the `.ure` beside it
+##!   dup    the original's source again, under a second crate name: a benchmark's twin control
+##!
+##! `keep.rs` is a list of every function as a function pointer. It exists to stop the linker
+##! discarding code the IR comparison wants to see, so it is included when comparing and left out
+##! when timing.
+
+use std::collections::BTreeMap
+use std::fs
+use std::path::{Path, PathBuf}
+use regex::Regex
+
+## Which archived file is the source of each side.
+pub fn source_of(side: str) -> str:
+    match side:
+        "gen": "generated.rs"
+        _: "original.rs"
+
+## The piece directories of the round-trip archive, in name order.
+pub fn pieces(root: &Path) -> Vec<String>:
+    name = Regex::new(r"^p\d_").expect("the pattern")
+    var out: Vec<String> = Vec::new()
+    if let Ok(entries) = fs::read_dir(root):
+        for entry in entries.flatten():
+            n = entry.file_name().to_string_lossy().to_string()
+            if entry.path().is_dir() && name.is_match(&n):
+                out.push(n)
+    out.sort()
+    out
+
+## The codegen anchor is a module of function pointers; a tool that does not want it must also
+## remove the declaration that names it.
+fn strip_keep_module(body: str) -> String:
+    Regex::new(r"(?m)^\s*(#\[[^\]]*\]\s*)*(pub )?mod keep;\s*$").expect("the pattern").replace_all(body, "").to_string()
+
+## Write each piece's crates under `dest`; returns `{(piece, side): crate directory}`.
+##
+## `flat` puts a crate at `<dest>/<piece>_<side>`, which is what a benchmark's path dependencies
+## want; otherwise at `<dest>/<piece>/<side>`, the layout the pipeline grew up with.
+pub fn reconstruct(root: &Path, dest: &Path, wanted: [String], sides: [&str], keep: bool, flat: bool) -> BTreeMap<(String, String), PathBuf>:
+    named = Regex::new(r#"(?m)^name = "[^"]+""#).expect("the pattern")
+    var out = BTreeMap::new()
+    for piece in pieces(root):
+        if !wanted.is_empty() && !wanted.contains(&piece):
+            continue
+        src = root.join(&piece)
+        manifest = fs::read_to_string(src.join("Cargo.toml")).expect("the piece manifest")
+        stem = piece.split('_').next().unwrap_or("p")
+        for side in sides:
+            name = format("{stem}_{side}")
+            dir = if flat: dest.join(format("{piece}_{side}")) else: dest.join(&piece).join(side)
+            fs::remove_dir_all(&dir).ok()
+            fs::create_dir_all(dir.join("src")).expect("the dir directory")
+            var body = fs::read_to_string(src.join(source_of(side))).expect("the piece source")
+            anchor = src.join("keep.rs")
+            if keep && anchor.exists():
+                fs::copy(&anchor, dir.join("src").join("keep.rs")).expect("copy the anchor")
+            else:
+                body = strip_keep_module(&body)
+            fs::write(dir.join("src").join("lib.rs"), body).expect("write the dir source")
+            renamed = named.replace(&manifest, format("name = \"{name}\"").as_str()).to_string()
+            fs::write(dir.join("Cargo.toml"), renamed).expect("write the dir manifest")
+            out.insert((piece.clone(), side.to_string()), dir)
+    out

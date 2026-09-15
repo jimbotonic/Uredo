@@ -1,0 +1,7 @@
+##! A second binary. Cargo makes every file directly under `src/bin/` its own crate root, so this
+##! is not a module of the library and carries no `mod` declaration anywhere.
+
+use compat_targets::join
+
+fn main():
+    print("{}", join("aux", "target"))

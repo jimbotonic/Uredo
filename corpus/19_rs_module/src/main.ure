@@ -1,0 +1,14 @@
+##! 19. Calling into a hand-written `.rs` module: arguments are passed verbatim (D2, §10.3).
+
+use mathutil::{Matrix, dot, scale_in_place}
+
+fn main():
+    a = [1.0, 2.0, 3.0]
+    b = [4.0, 5.0, 6.0]
+    print("dot {}", dot(&a, &b))
+    var v = Vec::from([1.0, 2.0])
+    scale_in_place(&mut v, 3.0)
+    print("{v:?}")
+    m = Matrix::identity(2)
+    print("{:?} trace {}", m.rows(), m.trace())
+    print("{}", mathutil::describe(&m))

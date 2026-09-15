@@ -1,0 +1,7 @@
+##! The binary target: it uses the library by name, as any other crate would.
+
+use compat_targets::{join, shout}
+
+fn main():
+    print("{}", join("bin", "target"))
+    print("{}", shout("quiet"))

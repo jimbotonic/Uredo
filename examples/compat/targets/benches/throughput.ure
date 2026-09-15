@@ -1,0 +1,27 @@
+##! §35's target-kind field, the last one: a **bench**. Every other kind in this package has been
+##! exercised since the recording pass; this one was "lowered by the same rule and untested", which
+##! is exactly the shape of gap that hides a defect.
+##!
+##! Stable Rust has no `#[bench]`, so a bench target is a plain `main` with `harness = false` in the
+##! manifest — what Criterion and every other stable benchmark harness is built on. Cargo compiles
+##! it against the library by name, as it does a test or an example, and `cargo bench` runs it.
+##!
+##! It is a *timing* harness in shape only: §36 retired the wall-clock budget, and nothing here
+##! gates on the number. What is being exercised is that the target kind lowers, links and runs.
+
+use std::time::Instant
+
+use compat_targets::join
+
+fn main():
+    rounds = 20000
+    started = Instant::now()
+    var last = String::new()
+    for _round in 0..rounds:
+        last = join("bench", "target")
+        # keep the work: an unused result is a call the optimiser may delete
+        if last.is_empty():
+            print("impossible")
+    elapsed = started.elapsed()
+    per = (elapsed.as_nanos() as f64) / (rounds as f64)
+    print("join: {rounds} rounds in {:?} — {:.0} ns each, last {last}", elapsed, per)

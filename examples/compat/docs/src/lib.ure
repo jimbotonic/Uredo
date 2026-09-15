@@ -1,0 +1,60 @@
+##! §26.4: **documentation with examples that are compiled and run**.
+##!
+##! A fenced block in a `##` comment is Uredo source. It is lowered into the generated crate's
+##! documentation as an ordinary doctest, so `uredo test` compiles and runs it and `uredo doc`
+##! renders it. The rendered example is Rust, because the documentation belongs to the generated
+##! crate, which is what a consumer of an exported package reads (§4.6).
+##!
+##! ```
+##! use compat_docs::join
+##! assert_eq!(join("crate", "level"), "crate-level")
+##! ```
+
+## Joins two words with a hyphen.
+##
+## ```
+## use compat_docs::join
+##
+## joined = join("a", "b")
+## assert_eq!(joined, "a-b")
+## ```
+##
+## An example may declare items and use the language freely:
+##
+## ```
+## use compat_docs::join
+##
+## fn shout(a: str) -> String:
+##     join(a, "!").to_uppercase()
+##
+## assert_eq!(shout("hi"), "HI-!")
+## ```
+pub fn join(a: str, b: str) -> String:
+    format("{a}-{b}")
+
+## Compiled but not run, because it would never return.
+##
+## ```no_run
+## use compat_docs::wait_forever
+##
+## wait_forever()
+## ```
+pub fn wait_forever():
+    loop:
+        std::thread::sleep(std::time::Duration::from_secs(3600))
+
+## A block that is already Rust is passed through untouched, for the rare example that has to be
+## written in the target language:
+##
+## ```rust
+## let doubled: Vec<u32> = vec![1, 2, 3].into_iter().map(|n| n * 2).collect();
+## assert_eq!(doubled, vec![2, 4, 6]);
+## ```
+##
+## and a block that is not code at all is rendered as it stands:
+##
+## ```text
+## a-b
+## ```
+pub fn documented() -> u32:
+    1

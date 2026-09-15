@@ -1,0 +1,7 @@
+##! The repository's own tools, written in Uredo.
+##!
+##! The binaries under `src/bin/` are Cargo crate roots and cannot share a module with each other,
+##! so anything two of them need lives here: `pieces`, which rebuilds the archived round-trip
+##! pieces into the crates every tool that compiles one has to agree about.
+
+pub mod pieces

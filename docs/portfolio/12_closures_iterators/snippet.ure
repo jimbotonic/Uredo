@@ -1,0 +1,63 @@
+##! 12 — Closures and iterators: `x => …`, capture modes, `move`, lazy chains,
+##! explicit materialisation with `collect`.
+
+@derive(Debug, Clone)
+struct Item:
+    name: String
+    price_cents: u32
+    in_stock: bool
+
+## A function taking a closure: the bound is Rust's; `impl Fn` is an anonymous type parameter
+## and passes by value (P8, D52), so the caller hands the closure over as Rust does.
+fn apply_twice(f: impl Fn(u32) -> u32, x: u32) -> u32:
+    f(f(x))
+
+fn main():
+    items = Vec::from([
+        Item { name: String::from("pen"), price_cents: 150, in_stock: true },
+        Item { name: String::from("ink"), price_cents: 900, in_stock: false },
+        Item { name: String::from("pad"), price_cents: 450, in_stock: true },
+    ])
+
+    # Closure forms (§17): `x => expr`, `(a, b) => expr`, typed `(x: u32) -> u32 => expr`,
+    # `() => expr`, patterns in parameters, `var` for a mutable parameter binding.
+    double = (x: u32) -> u32 => x * 2
+    print("{}", apply_twice(double, 5))
+    print("{}", apply_twice(x => x + 1, 5))
+
+    # Iterator chains are lazy; nothing runs until a consumer asks. `collect` allocates,
+    # and says so; the turbofish stays in expression position (38.3).
+    names: Vec<&str> = items.iter().filter(i => i.in_stock).map(i => i.name.as_str()).collect()
+    print("{names:?}")
+    total = items.iter().map(i => i.price_cents).sum::<u32>()
+    print("total {total}")
+    cheapest = items.iter().min_by_key(i => i.price_cents).map(i => i.name.clone())
+    print("{cheapest:?}")
+
+    # Capture: rustc infers by-ref / by-mut-ref / by-value from the body, exactly as in Rust.
+    var calls = 0
+    var log = () => calls += 1              # captures `calls` mutably: FnMut
+    log()
+    log()
+    print("calls {calls}")
+
+    # `move` forces by-value capture: needed when the closure outlives the frame (threads, tasks).
+    prefix = String::from("item: ")
+    label = move (name: str) => format("{prefix}{name}")
+    print("{}", label("pen"))
+
+    # A multi-statement closure body is a *trailing block argument* (D51): the closure header
+    # ends the line, the body is an indented block, and the call's `)` closes it on its own
+    # line at the header line's indentation. `var` on a parameter is Rust's `mut` (D31).
+    summary = items.iter().fold(String::new(), (var acc, item) =>
+        acc.push_str(&item.name)            # `push_str` is a Rust method: write the `&` (D2)
+        acc.push(' ')
+        acc
+    )
+    print("{summary}")
+
+    # `enumerate`, `zip`, `rev`, `windows`: the std iterator vocabulary is untouched.
+    for (i, item) in items.iter().enumerate():
+        print("{i}: {}", item.name)
+    for pair in [1, 2, 3, 4].windows(2):
+        print("{pair:?}")

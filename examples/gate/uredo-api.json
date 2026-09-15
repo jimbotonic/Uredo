@@ -1,0 +1,59 @@
+{
+  "package": "gate",
+  "uredo": "0.0.1",
+  "items": [
+    {
+      "path": "Job",
+      "kind": "struct",
+      "signature": "pub struct Job",
+      "attrs": [
+        "derive(Debug, Clone, PartialEq, Eq, Hash, Default)"
+      ],
+      "members": [
+        "pub id: u32",
+        "pub payload: String"
+      ]
+    },
+    {
+      "path": "Job::new",
+      "kind": "method",
+      "signature": "fn new(id: u32, payload: &str) -> Self"
+    },
+    {
+      "path": "derive_roundtrip",
+      "kind": "fn",
+      "signature": "fn derive_roundtrip(job: &Job) -> (bool, String, Job)"
+    },
+    {
+      "path": "greeting",
+      "kind": "fn",
+      "signature": "fn greeting() -> String",
+      "attrs": [
+        "cfg(feature = \"fancy\")"
+      ]
+    },
+    {
+      "path": "greeting",
+      "kind": "fn",
+      "signature": "fn greeting() -> String",
+      "attrs": [
+        "cfg(not(feature = \"fancy\"))"
+      ]
+    },
+    {
+      "path": "labels",
+      "kind": "fn",
+      "signature": "fn labels(n: u8) -> (&'static str, &'static str)"
+    },
+    {
+      "path": "route",
+      "kind": "mod",
+      "signature": "pub mod route"
+    },
+    {
+      "path": "spawn_len",
+      "kind": "fn",
+      "signature": "fn spawn_len(job: Job) -> usize"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+[package]
+name = "compat_targets"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+default-run = "compat_targets"
+
+[features]
+default = []
+loud = []
+
+# A bench target on stable is a plain `main`: there is no `#[bench]` outside nightly, so the
+# harness is switched off and the target runs itself (§35's target-kind field).
+[[bench]]
+name = "throughput"
+harness = false
+
+[dependencies]
+
+[workspace]

@@ -1,0 +1,12 @@
+##! The gate binary: exercises the library and prints one line per gate item.
+
+use gate::{Job, derive_roundtrip, greeting, labels, spawn_len}
+
+fn main():
+    (owned, borrowed) = labels(7)
+    print("item1 {owned} {borrowed}")
+    job = Job::new(1, "payload")
+    (same, debug, dflt) = derive_roundtrip(job)
+    print("item2 {same} {debug} {}", dflt.id)
+    print("item3 {}", spawn_len(job))
+    print("item6 {}", greeting())

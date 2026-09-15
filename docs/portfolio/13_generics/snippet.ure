@@ -1,0 +1,56 @@
+##! 13 — Generics: type parameters, bounds, `where`, generic structs and impls.
+##!
+##! The passing mode of a type parameter is decided syntactically (D1, D52): `x: T` passes
+##! *by value* (P8) — the type-parameter form is the visible sign, as the pattern is in P7 —
+##! and a `?Sized` bound keeps the borrow. Write `&T` to borrow a type parameter explicitly.
+
+## A generic function with an inline bound. `values: [T]` is `&[T]`; the return borrows from it.
+fn largest<T: PartialOrd>(values: [T]) -> &T?:          # Option<&T> (the `&T?` precedence, D54)
+    var best = values.first()?
+    for v in values:
+        if v > best: best = v
+    Some(best)
+
+## A type parameter is already by value (P8); `take T` is accepted and means the same (a lint
+## will flag it as redundant), so the plain form is preferred.
+fn boxed<T>(value: T) -> Box<T>:
+    Box::new(value)
+
+## `where` clauses are Rust's, written as an indented block.
+fn describe_all<T, U>(items: [T], tag: U) -> Vec<String>
+where:
+    T: std::fmt::Debug
+    U: std::fmt::Display + Copy:
+    items.iter().map(i => format("{tag}: {i:?}")).collect()
+
+## A generic struct with an `impl<T>` block and a bounded method.
+@derive(Debug, Clone)
+struct Pair<T>:
+    first: T
+    second: T
+
+impl<T: Clone + PartialOrd> Pair<T>:
+    fn new(first: T, second: T) -> Self:            # by value (P8): the pair owns both
+        Self { first, second }
+
+    fn max(self) -> T:                                  # returns a clone: the cost is written
+        if first >= second: first.clone() else: second.clone()
+
+    fn swap(self: inout):
+        std::mem::swap(&mut self.first, &mut self.second)   # a Rust item: the `&mut` is written
+
+## Const generics keep Rust's spelling (Phase 3 surface, shown for completeness).
+fn sum_array<const N: usize>(xs: [i32; N]) -> i32:      # a fixed array is known-Copy: by value
+    xs.iter().sum()
+
+fn main():
+    print("{:?}", largest([3, 9, 2]))
+    print("{:?}", largest(Vec::<f64>::new()))
+    b = boxed(String::from("on the heap"))
+    print("{b}")
+    print("{:?}", describe_all([1, 2], "n"))
+    var p = Pair::new(String::from("x"), String::from("y"))
+    print("{}", p.max())
+    p.swap()
+    print("{p:?}")
+    print("{}", sum_array([1, 2, 3, 4]))

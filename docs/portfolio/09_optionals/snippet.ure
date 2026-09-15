@@ -1,0 +1,62 @@
+##! 09 — Optional values: `T?` is `Option<T>`; there is no null and no truthiness.
+
+@derive(Debug, Clone)
+struct User:
+    name: String
+    email: String?                          # Option<String>: sugar in type position only
+
+## `T?` in a return type; `None`/`Some` keep Rust's names.
+fn find(users: [User], name: str) -> User?:
+    for u in users:
+        if u.name == name: return Some(u.clone())     # cloning is explicit: the caller gets an owned User
+    None
+
+## `?` works on `Option` in an `Option`-returning function (D30): `None` propagates.
+fn email_domain(users: [User], name: str) -> String?:
+    user = find(users, name)?               # early return on None
+    email = user.email?                     # a field that is itself an Option
+    domain = email.split('@').nth(1)?       # Iterator::nth returns Option
+    Some(domain.to_string())
+
+fn main():
+    users = Vec::from([
+        User { name: String::from("ada"), email: Some(String::from("ada@example.org")) },
+        User { name: String::from("bob"), email: None },
+    ])
+
+    # Combinators are Rust's; nothing is hidden behind the sugar.
+    print("{:?}", email_domain(users, "ada"))
+    print("{:?}", email_domain(users, "bob"))
+    print("{:?}", email_domain(users, "cy"))
+
+    # `if let Some(x) = &opt` borrows; without `&` it moves the payload out (§14).
+    first = users.first()
+    if let Some(u) = first:
+        print("first user {}", u.name)
+
+    # `unwrap_or`, `map`, `and_then`, `is_some`: all std, all visible.
+    nick = find(users, "zed").map(u => u.name.to_uppercase()).unwrap_or(String::from("nobody"))
+    print(nick)
+
+    # An optional parameter follows its payload (D54): `String?` is borrowed, `u32?` is by value.
+    print("{}", describe(users[1].email))
+    print("{} {}", score_band(Some(72)), score_band(None))
+    print("{}", initial(users.first().map(u => &u.name)))
+
+fn describe(email: String?) -> &'static str:
+    match email:                            # `email` is `&Option<String>`; match ergonomics apply
+        Some(_): "has email"
+        None: "no email"
+
+## `u32` is known-Copy, so `Option<u32>` is too: the parameter passes by value (P1, D54). Nothing
+## moves — a copy is not a transfer — so no `take` is needed and none is written.
+fn score_band(score: u32?) -> &'static str:
+    match score:
+        Some(s) if s >= 80: "high"
+        Some(_): "low"
+        None: "unscored"
+
+## `&T?` is `Option<&T>` (D54), the shape Rust reaches for when it borrows an optional's payload;
+## a shared reference is known-Copy, so this one passes by value too.
+fn initial(name: &String?) -> char:
+    name.and_then(n => n.chars().next()).unwrap_or('?')

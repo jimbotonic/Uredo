@@ -1,0 +1,7 @@
+##! 1. Hello world: printing, interpolation, an owned string.
+
+fn main():
+    name = "world"
+    print("Hello, {name}!")
+    greeting: String = format("Hello again, {name}")
+    print("{} ({} bytes)", greeting, greeting.len())

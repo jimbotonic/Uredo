@@ -1,0 +1,55 @@
+##! 02 — Bindings, mutability, shadowing, constants, literals and casts.
+
+const MAX_RETRIES: u32 = 3          # `const` and `static` keep Rust's spelling and semantics
+static BANNER: str = "uredo"        # `str` in a static is `&'static str`
+
+## A declaration group (D46): one visibility, an ordered list of ordinary `const` items. There is
+## no group item in the generated Rust; an attribute on the group would apply to every member.
+const:
+    KILO: u64 = 1000
+    MEGA: u64 = KILO * 1000
+
+fn main():
+    # ---- binding vs assignment (§8.1) ----
+    # The first `name = expr` in a scope *binds* (Rust `let`). A later `name = expr`
+    # *assigns*, which is only legal for a `var` binding (Rust `let mut`).
+    count = 10                      # let count = 10;            (immutable)
+    var total = 0                   # let mut total = 0;         (mutable)
+    total = total + count           # assignment: fine, `total` is `var`
+    total += 1                      # compound assignment, same rule
+    # count = 11                    # error: `count` is immutable; declare it with `var`
+
+    # ---- shadowing (D25) ----
+    # A *new* binding with the same name is spelled with `let`, as in Rust. This is how
+    # you change the type of a name without inventing a second one.
+    input = "  42  "
+    let input = input.trim()        # &str -> &str, new binding shadows the old
+    let input: u32 = input.parse().unwrap()   # &str -> u32 (typed binding)
+    print("parsed {input}, total {total}, retries {MAX_RETRIES}, banner {BANNER}")
+
+    # ---- typed bindings and literal inference (§9.8) ----
+    ratio: f64 = 0.5                # explicit type
+    a = 42                          # i32 unless context says otherwise
+    b = 42u64                       # literal suffixes are Rust's
+    c = 3.14                        # f64
+    d = 0xFF                        # hex, as in Rust
+    e = 1_000_000                   # digit separators, as in Rust
+
+    # ---- casts keep Rust's `as` (§7.3) — `as` is never anything else in an expression ----
+    small = e as u16                # truncating cast, exactly Rust's semantics
+    frac = a as f64 / 8.0
+
+    # ---- tuples and destructuring bindings (D32) ----
+    (lo, hi) = (1, 100)             # binds two new names (all names unbound => binding)
+    var (x, y) = (0.0, 1.0)         # mutable destructuring
+    (x, y) = (y, x)                 # both bound and `var` => destructuring assignment, as Rust
+    _ = ratio                       # `_` never binds: evaluates and discards (`let _ = ratio;`)
+
+    print("{a} {b} {c} {d} {e} {small} {frac} {lo}..{hi} ({x}, {y})")
+
+    # Integer overflow follows Rust: panics in debug builds, wraps in release (§7.2).
+    # Use the explicit methods when you mean it:
+    wrapped = u8::MAX.wrapping_add(1)
+    checked = u8::MAX.checked_add(1)
+    print("{wrapped} {checked:?}")
+    print("{} {}", KILO, MEGA)

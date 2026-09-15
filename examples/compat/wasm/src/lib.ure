@@ -1,0 +1,47 @@
+##! §35 compatibility entry: **wasm-bindgen**, which is two questions at once. The first is an
+##! attribute applied to functions, to a type and to its methods, and to a foreign block; the second
+##! is a target Uredo does not build for by default, reached with `uredo check --target`.
+##! The `extern "C"` block is Rust's own syntax and lives in a `rust { }` block (§22.2), as it does
+##! for C FFI; everything else is written in Uredo.
+
+use wasm_bindgen::prelude::*
+
+## A plain exported function: the attribute is forwarded and the signature stays Uredo's.
+@wasm_bindgen
+pub fn greet(name: str) -> String:
+    format("hello, {name}")
+
+## An exported type with exported methods. `@wasm_bindgen(constructor)` carries arguments.
+@wasm_bindgen
+pub struct Counter:
+    value: i32
+
+@wasm_bindgen
+impl Counter:
+    @wasm_bindgen(constructor)
+    pub fn new(start: i32) -> Counter:
+        Counter { value: start }
+
+    pub fn bump(self: inout, by: i32) -> i32:
+        self.value += by
+        self.value
+
+## The imported side is an `extern` block, which Uredo does not model (§22.2).
+rust {
+    #[wasm_bindgen]
+    extern "C" {
+        #[wasm_bindgen(js_namespace = console)]
+        fn log(s: &str);
+    }
+}
+
+## Called from Rust as well as from JavaScript, so the fixture can be tested without a browser.
+pub fn describe(start: i32, by: i32) -> String:
+    var c = Counter::new(start)
+    format("{} then {}", greet("wasm"), c.bump(by))
+
+## The exported surface is ordinary Rust for a host build, so it is testable without a JavaScript
+## engine; the browser side is not what this entry is about.
+@test
+fn describe_runs_on_the_host():
+    assert_eq!(describe(1, 2), "hello, wasm then 3")

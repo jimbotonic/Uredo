@@ -1,0 +1,24 @@
+[package]
+name = "uredo"
+version = "0.0.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Uredo: a Python-like surface syntax that compiles to readable Rust"
+repository = "https://github.com/jimbotonic/Uredo"
+readme = "README.md"
+keywords = ["language", "compiler", "transpiler", "codegen", "syntax"]
+categories = ["compilers", "development-tools", "command-line-utilities"]
+# Edition 2024 cannot build on anything older, and `cargo +1.85 check --all-targets` passes,
+# so this is a tested floor rather than a guess.
+rust-version = "1.85"
+
+[[bin]]
+name = "uredo"
+path = "src/main.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

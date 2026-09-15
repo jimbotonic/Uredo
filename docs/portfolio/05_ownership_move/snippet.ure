@@ -1,0 +1,40 @@
+##! 05 — Ownership transfer: `take`, moves, and why nothing is cloned for you.
+
+@derive(Debug, Clone)
+struct Job:              # Clone is derived because we clone below; nothing clones implicitly
+    id: u32
+    payload: String                 # a non-Copy field: moving a Job moves the String
+
+## `take` is the only spelling of a non-`Copy` ownership transfer (§38 rule).
+## The parameter owns the value; the caller's binding is dead afterwards.
+fn enqueue(job: take Job) -> Vec<Job>:
+    Vec::from([job])
+
+## Without `take`, a non-Copy parameter is a shared borrow (rule P3): `&Job`.
+fn describe(job: Job) -> String:
+    format("job {} carrying {} bytes", job.id, job.payload.len())
+
+fn main():
+    job = Job { id: 1, payload: String::from("hello") }
+    print(describe(job))            # borrowed: `job` is still usable afterwards
+    queue = enqueue(job)            # moved: `job` is consumed here
+    # print(job.id)                 # error: `job` was moved into `enqueue`.
+    #                                 The compiler will not clone it for you (§10.4):
+    #                                 cloning may allocate, so it must be written.
+    print("{}", queue.len())
+
+    # If you need both, say so — the cost is visible:
+    twin = Job { id: 2, payload: String::from("again") }
+    copy_of_twin = twin.clone()     # requires `@derive(Clone)`; try it: the compiler will ask
+    _ = enqueue(copy_of_twin)
+    print("{twin:?}")
+
+    # Known-Copy types (scalars, `@derive(Copy)` types, references) copy on `take` (P5):
+    n: u64 = 7
+    consume_number(n)
+    print("{n} still here")
+
+## `take` on a known-Copy type is the one `take` that copies rather than moves, which is why
+## `uredo lint` reports it as redundant: the signature is the same as `n: u64` (P1).
+fn consume_number(n: take u64):
+    print("got {n}")

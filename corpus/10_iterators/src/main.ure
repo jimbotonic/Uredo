@@ -1,0 +1,42 @@
+##! 10. Iterator pipeline: lazy adaptors, closures, `collect`, `fold`, `zip`, `windows`, `group` by key.
+
+use std::collections::BTreeMap
+
+@derive(Debug, Clone)
+struct Sale:
+    region: String
+    amount: u32
+
+fn totals_by_region(sales: [Sale]) -> BTreeMap<String, u32>:
+    var totals = BTreeMap::new()
+    for sale in sales:
+        *totals.entry(sale.region.clone()).or_insert(0) += sale.amount
+    totals
+
+fn main():
+    sales = Vec::from([
+        Sale { region: String::from("north"), amount: 120 },
+        Sale { region: String::from("south"), amount: 80 },
+        Sale { region: String::from("north"), amount: 45 },
+        Sale { region: String::from("east"), amount: 200 },
+        Sale { region: String::from("south"), amount: 15 },
+    ])
+    big: Vec<&Sale> = sales.iter().filter(s => s.amount >= 80).collect()
+    print("{} big sales, first in {}", big.len(), big[0].region)
+    total = sales.iter().map(s => s.amount).sum::<u32>()
+    running: Vec<u32> = sales.iter().scan(0, (acc, s) =>
+        *acc += s.amount
+        Some(*acc)
+    ).collect()
+    print("total {total}, running {running:?}")
+    for (region, sum) in totals_by_region(sales):
+        print("{region}: {sum}")
+    amounts: Vec<u32> = sales.iter().map(s => s.amount).collect()
+    jumps = amounts.windows(2).filter(w => w[1] > w[0]).count()
+    print("{jumps} increases")
+    labels = ["a", "b", "c"]
+    paired: Vec<String> = labels.iter().zip(amounts.iter()).map(((l, a)) => format("{l}={a}")).collect()
+    print("{}", paired.join(","))
+    max_sale = sales.iter().max_by_key(s => s.amount).map(s => s.amount).unwrap_or(0)
+    (evens, odds): (Vec < u32 >, Vec < u32 >) = amounts.iter().partition(a => *a % 2 == 0)
+    print("max {max_sale}, {} even, {} odd", evens.len(), odds.len())

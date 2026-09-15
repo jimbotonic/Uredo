@@ -1,0 +1,32 @@
+##! Reconstruct the archived round-trip pieces, then print what was written.
+##!
+##! usage: pieces <destination> [piece …]
+
+use std::path::PathBuf
+use uredo_tools::pieces::reconstruct
+
+fn main():
+    args: Vec<String> = std::env::args().skip(1).collect()
+    if args.is_empty():
+        eprint("usage: pieces <destination> [piece …]")
+        std::process::exit(2)
+    root = archive_root()
+    dest = PathBuf::from(&args[0])
+    wanted: Vec<String> = args[1..].to_vec()
+    written = reconstruct(&root, &dest, wanted, ["orig", "gen"], true, false)
+    for ((piece, side), path) in written:
+        shown = path.strip_prefix(&root).map(p => p.display().to_string()).unwrap_or_else(_e => path.display().to_string())
+        print("{piece}/{side} -> {shown}")
+
+## The round-trip archive, relative to the checkout this command was run in.
+fn archive_root() -> PathBuf:
+    var here = std::env::current_dir().unwrap_or_else(_e => PathBuf::from("."))
+    loop:
+        candidate = here.join("docs/corpus-study/roundtrip")
+        if candidate.is_dir():
+            return candidate
+        match here.parent():
+            Some(up):
+                here = up.to_path_buf()
+            None:
+                return PathBuf::from(".")

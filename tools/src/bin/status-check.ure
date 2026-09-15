@@ -1,0 +1,136 @@
+##! Recomputes every measured figure §0.1 publishes, from the artefacts rather than from the text.
+##!
+##! §0.1 is a summary of records generated elsewhere, and a summary drifts from what it summarises —
+##! that is §6.5's standing warning and it happened twice in one week: the corpus's token reduction
+##! was overstated for a day after the tokenizer was fixed, and `results.json` and `RESULTS.md`, two
+##! halves of one run, fell a whole correction apart because one of them kept being reverted.
+##!
+##! This does not parse §0.1. It prints the figures in the phrasing §0.1 uses, so the two can be put
+##! side by side by whoever edits it, and it fails when two records of the *same* measurement
+##! disagree with each other — which is the drift no amount of care catches by reading.
+##!
+##! usage: status-check
+
+use std::fs
+use std::path::{Path, PathBuf}
+use serde_json::Value
+
+fn read_json(path: &Path) -> Value:
+    text = fs::read_to_string(path).unwrap_or_else(_e => String::from("{}"))
+    serde_json::from_str(&text).unwrap_or(Value::Null)
+
+fn num(v: &Value) -> f64:
+    v.as_f64().unwrap_or(f64::NAN)
+
+fn int(v: &Value) -> i64:
+    v.as_i64().unwrap_or(-1)
+
+fn main():
+    root = repo_root()
+    var failures = 0
+
+    print("§37 — the corpus (`corpus/results.json`, `corpus/RESULTS.md`)")
+    r = read_json(&root.join("corpus/results.json"))
+    s = &r["summary"]
+    print("  programs                      {}", int(&s["programs"]))
+    print("  tokens, programs 1–15         −{:.1}%", num(&s["token_reduction_app_pct"]))
+    print("  tokens, all twenty            −{:.1}%", num(&s["token_reduction_pct"]))
+    print("  signature annotations         {} vs {}   ratio {:.2}", int(&s["sig_annotations_ure"]), int(&s["sig_annotations_rust"]), num(&s["sig_annotation_ratio"]))
+    print("  all annotations               {} vs {}   ratio {:.2}", int(&s["annotations_ure"]), int(&s["annotations_rust"]), num(&s["annotation_ratio"]))
+    print("  inference hit rate            {}/{}", int(&s["hit"]), int(&s["params"]))
+    print("  barrier diagnostics mapped    {}/{}", int(&s["diagnostics_mapped"]), int(&s["diagnostics_total"]))
+    print("  raw-Rust share                {:.1}%", num(&s["raw_rust_share_pct"]))
+    print("  every program prints the same {}", s["all_same_output"].as_bool().unwrap_or(false))
+
+    # the two halves of one run must agree: this is the drift that actually happened
+    report = fs::read_to_string(root.join("corpus/RESULTS.md")).unwrap_or_default()
+    stated = format("tokens {} vs {}", int(&s["tokens_ure"]), int(&s["tokens_rust"]))
+    if !report.contains(&stated):
+        print("  MISMATCH: RESULTS.md does not say `{}` — the two halves of one run disagree", stated)
+        failures += 1
+
+    print("")
+    print("§36 — allocation and size (`corpus/perf.json`)")
+    p = read_json(&root.join("corpus/perf.json"))
+    if let Some(programs) = p["programs"].as_array():
+        var passing = 0
+        var alloc_same = 0
+        var peak_same = 0
+        var peak_gap = 0
+        for e in programs.iter():
+            if e["pass"].as_bool().unwrap_or(false) && !e["over_baseline"].as_bool().unwrap_or(false):
+                passing += 1
+            u = &e["uredo"]
+            rs = &e["rust"]
+            if int(&u["allocations"]) == int(&rs["allocations"]) && int(&u["bytes"]) == int(&rs["bytes"]):
+                alloc_same += 1
+            if int(&u["peak"]) == int(&rs["peak"]):
+                peak_same += 1
+            else:
+                peak_gap = int(&u["peak"]) - int(&rs["peak"])
+        print("  programs passing              {} of {}", passing, programs.len())
+        print("  identical allocations, bytes  {} of {}", alloc_same, programs.len())
+        print("  identical peak live bytes     {} of {}   the other holds {} bytes more", peak_same, programs.len(), peak_gap)
+
+    print("")
+    print("§36 — the retired runtime budget (`corpus-study/roundtrip/runtime.json`)")
+    rt = read_json(&root.join("docs/corpus-study/roundtrip/runtime.json"))
+    if let Some(pieces) = rt["pieces"].as_array():
+        var worst_bias = 0.0
+        var worst_name = String::new()
+        var worst_ratio = 0.0
+        var machine = 0
+        var method = 0
+        for piece in pieces.iter():
+            bias = (num(&piece["twin_mean"]) - 1.0).abs()
+            if bias > worst_bias:
+                worst_bias = bias
+                worst_name = piece["piece"].as_str().unwrap_or("").to_string()
+                worst_ratio = num(&piece["mean"])
+            if num(&piece["control_upper"]) <= 1.02:
+                machine += 1
+            if num(&piece["twin_upper"]) <= 1.02:
+                method += 1
+        print("  worst crate-boundary bias     {:.1}% on {}, whose own reading was {:.4}", 100.0 * worst_bias, worst_name, worst_ratio)
+        print("  the machine resolved 2% on    {} of {} pieces", machine, pieces.len())
+        print("  the method resolved it on     {}", method)
+        if worst_bias <= 0.02:
+            print("  NOTE: the bias is now under the budget; §36's retirement rests on it exceeding 2%")
+            failures += 1
+
+    print("")
+    print("§35 — the compatibility suite (`docs/COMPATIBILITY.md`, generated)")
+    compat = fs::read_to_string(root.join("docs/COMPATIBILITY.md")).unwrap_or_default()
+    var entries = 0
+    var complete = 0
+    for line in compat.lines():
+        if line.starts_with("| ") && !line.starts_with("| Entry"):
+            entries += 1
+            if line.trim_end().ends_with("| covered |"):
+                complete += 1
+    print("  entries                       {}   with nothing missing {}", entries, complete)
+
+    print("")
+    print("the corpus study (`docs/corpus-study/stats.json`)")
+    stats = read_json(&root.join("docs/corpus-study/stats.json"))
+    if let Some(repos) = stats.as_object():
+        total: i64 = repos.values().map(v => int(&v["meta.lines"])).filter(n => *n > 0).sum()
+        print("  repositories                  {}   lines {:.2} M", repos.len(), (total as f64) / 1000000.0)
+
+    print("")
+    if failures == 0:
+        print("no record disagrees with another; compare the figures above with §0.1 by hand")
+    else:
+        print("{} record(s) disagree", failures)
+        std::process::exit(1)
+
+fn repo_root() -> PathBuf:
+    var here = std::env::current_dir().unwrap_or_else(_e => PathBuf::from("."))
+    loop:
+        if here.join("compiler").join("src").is_dir():
+            return here
+        match here.parent():
+            Some(up):
+                here = up.to_path_buf()
+            None:
+                return PathBuf::from(".")

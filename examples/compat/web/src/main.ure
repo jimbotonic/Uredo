@@ -1,0 +1,78 @@
+##! §35 compatibility entry: **a web framework's extractors and handlers** (axum).
+##! The passing modes were decided without this crate in front of them; this checks them against it.
+##! An extractor is a pattern parameter, which P7 passes by value with the pattern as the visible
+##! sign; a handler is passed to `get`/`post` by value, which is what P8 does with a type parameter.
+##! The server and the client both run in this process, over a port the operating system chooses.
+
+@!default_error(Box<dyn std::error::Error + Send + Sync>)
+
+use axum::extract::{Path, State}
+use axum::routing::{get, post}
+use axum::{Json, Router}
+use serde::{Deserialize, Serialize}
+use tokio::io::{AsyncReadExt, AsyncWriteExt}
+use tokio::net::{TcpListener, TcpStream}
+
+@derive(Clone)
+struct Db:
+    greeting: String
+
+@derive(Serialize, Deserialize)
+struct Item:
+    name: String
+    count: u32
+
+## Two extractors as pattern parameters (P7): each is written as the pattern that destructures it.
+async fn show(State(db): State<Db>, Path(id): Path<u32>) -> String:
+    format("{}, item {id}", db.greeting)
+
+## A body extractor, and a `Json` response built from an Uredo struct.
+async fn add(State(db): State<Db>, Json(item): Json<Item>) -> Json<Item>:
+    Json(Item { name: format("{}/{}", db.greeting, item.name), count: item.count + 1 })
+
+async fn serve(listener: take TcpListener, app: take Router) throws:
+    axum::serve(listener, app).await?
+
+## A one-shot HTTP request, so the fixture needs no client crate.
+async fn request(addr: str, request: str) -> String throws:
+    var stream = TcpStream::connect(addr).await?
+    stream.write_all(request.as_bytes()).await?
+    var body = String::new()
+    stream.read_to_string(&mut body).await?
+    body
+
+fn body_of(response: str) -> str:
+    match response.split_once("\r\n\r\n"):
+        Some((_, body)): body
+        None: response
+
+@rust(tokio::main(flavor = "current_thread"))
+async fn main() throws:
+    db = Db { greeting: String::from("hello") }
+    # the handlers are passed by value to `get` and `post` (P8)
+    app = Router::new()
+        .route("/item/{id}", get(show))
+        .route("/item", post(add))
+        .with_state(db)
+
+    listener = TcpListener::bind("127.0.0.1:0").await?
+    addr = listener.local_addr()?.to_string()
+    tokio::spawn(serve(listener, app))
+
+    got = request(addr, format("GET /item/7 HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")).await?
+    print("{}", body_of(got))
+
+    payload = "{\"name\":\"widget\",\"count\":1}"
+    posted = request(
+        addr,
+        format("POST /item HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}", payload.len()),
+    ).await?
+    print("{}", body_of(posted))
+
+## `@rust(tokio::test)` follows the same rule as `tokio::main`: the attribute is forwarded and the
+## `async fn` beneath it is the test.
+@rust(tokio::test)
+async fn a_handler_answers_without_a_server() throws:
+    db = Db { greeting: String::from("hi") }
+    body = show(State(db), Path(3)).await
+    assert_eq!(body, "hi, item 3")

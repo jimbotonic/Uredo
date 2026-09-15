@@ -1,0 +1,66 @@
+##! §33.1's Phase 3 row: **const generics, generic associated types and pinning**, which the table
+##! said were reachable only through raw Rust. Nothing here uses `rust { }`. Const generics needed
+##! no change; the other two each needed one form the surface lacked — a `where` clause on an
+##! associated type, and a written receiver type (D59) — and both are now spelled in Uredo.
+
+use std::fmt::Debug
+use std::future::Future
+use std::pin::Pin
+use std::task::{Context, Poll}
+
+## Const generics: the length is part of the type, in the struct, its `impl` and a free function.
+@derive(Debug, Clone, Copy)
+struct Grid<const N: usize>:
+    cells: [u32; N]
+
+impl<const N: usize> Grid<N>:
+    fn filled(value: u32) -> Self:
+        Grid { cells: [value; N] }
+
+    fn total(self) -> u32:
+        var sum = 0
+        for c in self.cells:
+            sum += *c
+        sum
+
+    fn width(self) -> usize:
+        N
+
+## A generic associated type. The `where` clause is the bound rustc requires for `Self::View<'_>`.
+trait Window:
+    type View<'a>: Debug where Self: 'a
+    fn view(self) -> Self::View<'_>
+
+struct Buffer:
+    bytes: Vec<u8>
+
+impl Window for Buffer:
+    type View<'a> = &'a [u8] where Self: 'a
+    fn view(self) -> Self::View<'_>:
+        &self.bytes
+
+## Pinning: a future written by hand, with the receiver type Rust requires (D59). It is polled by a
+## real runtime below, not merely constructed.
+struct Countdown:
+    left: u32
+
+impl Future for Countdown:
+    type Output = u32
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<u32>:
+        var this = self
+        if this.left == 0: return Poll::Ready(0)
+        this.left -= 1
+        # ask to be polled again immediately; a real future would register a waker with its source
+        cx.waker().wake_by_ref()
+        Poll::Pending
+
+@rust(tokio::main(flavor = "current_thread"))
+async fn main():
+    grid: Grid< 4> = Grid::filled(3)
+    print("{} {} {}", grid.total(), grid.width(), Grid::< 2>::filled(1).total())
+
+    buffer = Buffer { bytes: Vec::from([1u8, 2, 3]) }
+    print("{:?}", buffer.view())
+
+    print("{}", Countdown { left: 3 }.await)

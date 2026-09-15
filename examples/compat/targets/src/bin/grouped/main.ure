@@ -1,0 +1,5 @@
+##! A binary in its own directory: `src/bin/grouped/main.ure` is the crate root, and the files
+##! beside it are its modules, declared in this file rather than in a `mod.rs`.
+
+fn main():
+    print("{}", helper::label())

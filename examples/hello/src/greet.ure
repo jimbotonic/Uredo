@@ -1,0 +1,12 @@
+## A greeting with an owned name.
+pub struct Greeting:
+    name: String
+
+    pub fn new(name: str) -> Self:
+        Self { name: name.to_string() }
+
+    pub fn render(self) -> String:
+        format("Hello, {}!", name)          # read-only field sugar (D41)
+
+pub fn shout(s: str) -> String:
+    s.to_uppercase()

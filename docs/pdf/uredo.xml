@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE language SYSTEM "language.dtd">
+<!--
+  A syntax definition for Uredo, for `pandoc --syntax-definition`.
+
+  Pandoc's highlighter (skylighting) reads KDE's KSyntaxHighlighting format and has no Uredo
+  definition of its own, so the manual's `uredo` blocks would otherwise render as plain verbatim.
+  This is deliberately shallow: it colours the words a reader scans for — the modes, the item
+  keywords, control flow, literals, attributes, lifetimes — and does not attempt to parse.
+-->
+<language name="Uredo" version="1" kateversion="5.0" section="Sources"
+          extensions="*.ure" mimetype="text/x-uredo" author="Uredo" license="MIT">
+  <highlighting>
+    <list name="items">
+      <item>fn</item><item>struct</item><item>enum</item><item>impl</item><item>trait</item>
+      <item>use</item><item>mod</item><item>type</item><item>const</item><item>static</item>
+      <item>macro_rules</item><item>pub</item><item>extern</item><item>rust</item>
+      <item>let</item>
+    </list>
+    <list name="control">
+      <item>if</item><item>else</item><item>for</item><item>in</item><item>while</item>
+      <item>loop</item><item>match</item><item>return</item><item>break</item>
+      <item>continue</item><item>yield</item><item>where</item><item>as</item>
+      <item>await</item><item>async</item><item>throws</item>
+    </list>
+    <list name="modes">
+      <item>take</item><item>inout</item><item>var</item><item>move</item><item>unsafe</item>
+    </list>
+    <list name="builtins">
+      <item>self</item><item>Self</item><item>super</item><item>crate</item><item>dyn</item>
+      <item>true</item><item>false</item>
+      <item>print</item><item>eprint</item><item>format</item><item>panic</item>
+    </list>
+    <list name="types">
+      <item>i8</item><item>i16</item><item>i32</item><item>i64</item><item>i128</item><item>isize</item>
+      <item>u8</item><item>u16</item><item>u32</item><item>u64</item><item>u128</item><item>usize</item>
+      <item>f32</item><item>f64</item><item>bool</item><item>char</item><item>str</item>
+    </list>
+
+    <contexts>
+      <context name="Normal" attribute="Normal Text" lineEndContext="#stay">
+        <Detect2Chars char="#" char1="#" attribute="Doc" context="Doc"/>
+        <DetectChar char="#" attribute="Comment" context="Comment"/>
+        <RegExpr String="@[A-Za-z_][A-Za-z0-9_]*" attribute="Attribute" context="#stay"/>
+        <RegExpr String="&#39;[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_&#39;])" attribute="Lifetime" context="#stay"/>
+        <RegExpr String="&#39;(\\.|[^\\&#39;])&#39;" attribute="Char" context="#stay"/>
+        <RegExpr String="r#+&quot;" attribute="String" context="RawString"/>
+        <DetectChar char="&quot;" attribute="String" context="String"/>
+        <keyword String="modes" attribute="Mode" context="#stay"/>
+        <keyword String="items" attribute="Item Keyword" context="#stay"/>
+        <keyword String="control" attribute="Control Flow" context="#stay"/>
+        <keyword String="builtins" attribute="Builtin" context="#stay"/>
+        <keyword String="types" attribute="Data Type" context="#stay"/>
+        <RegExpr String="[A-Za-z_][A-Za-z0-9_]*!" attribute="Macro" context="#stay"/>
+        <RegExpr String="\b[A-Z][A-Za-z0-9_]*" attribute="Data Type" context="#stay"/>
+        <RegExpr String="\b0[xXoObB][0-9a-fA-F_]+" attribute="Number" context="#stay"/>
+        <RegExpr String="\b[0-9][0-9_]*(\.[0-9][0-9_]*)?([eE][-+]?[0-9]+)?([iuf](8|16|32|64|128|size))?" attribute="Number" context="#stay"/>
+      </context>
+
+      <context name="Comment" attribute="Comment" lineEndContext="#pop"/>
+      <context name="Doc" attribute="Doc" lineEndContext="#pop"/>
+
+      <context name="String" attribute="String" lineEndContext="#pop">
+        <RegExpr String="\\." attribute="Escape" context="#stay"/>
+        <RegExpr String="\{[^{}&quot;]*\}" attribute="Interpolation" context="#stay"/>
+        <DetectChar char="&quot;" attribute="String" context="#pop"/>
+      </context>
+
+      <context name="RawString" attribute="String" lineEndContext="#stay">
+        <RegExpr String="&quot;#+" attribute="String" context="#pop"/>
+      </context>
+    </contexts>
+
+    <itemDatas>
+      <itemData name="Normal Text"   defStyleNum="dsNormal"/>
+      <itemData name="Item Keyword"  defStyleNum="dsKeyword"/>
+      <itemData name="Control Flow"  defStyleNum="dsControlFlow"/>
+      <itemData name="Mode"          defStyleNum="dsKeyword"/>
+      <itemData name="Builtin"       defStyleNum="dsBuiltIn"/>
+      <itemData name="Data Type"     defStyleNum="dsDataType"/>
+      <itemData name="Attribute"     defStyleNum="dsAttribute"/>
+      <itemData name="Lifetime"      defStyleNum="dsVariable"/>
+      <itemData name="Macro"         defStyleNum="dsPreprocessor"/>
+      <itemData name="String"        defStyleNum="dsString"/>
+      <itemData name="Char"          defStyleNum="dsChar"/>
+      <itemData name="Escape"        defStyleNum="dsSpecialChar"/>
+      <itemData name="Interpolation" defStyleNum="dsSpecialString"/>
+      <itemData name="Number"        defStyleNum="dsDecVal"/>
+      <itemData name="Comment"       defStyleNum="dsComment"/>
+      <itemData name="Doc"           defStyleNum="dsDocumentation"/>
+    </itemDatas>
+  </highlighting>
+
+  <general>
+    <comments><comment name="singleLine" start="#"/></comments>
+    <keywords casesensitive="1" additionalDeliminator="'"/>
+  </general>
+</language>
