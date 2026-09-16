@@ -6,7 +6,11 @@
 //! request. It reports a distribution rather than a single throughput number, because two servers
 //! within noise of each other is the expected result and a mean would hide it.
 //!
-//!   restdemo_bench <host:port> <path> <connections> <seconds>
+//!   restdemo_bench <host:port> <path> <connections> <seconds> [method] [body]
+//!
+//! A method and body make it a write generator, which is what testing lock contention needs: a
+//! shell loop issuing a few hundred writes a second cannot contend with a hundred thousand
+//! reads, and reporting that as "no contention" would be reporting the loop's speed.
 
 use std::time::{Duration, Instant};
 
@@ -16,10 +20,12 @@ use tokio::net::TcpStream;
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
-    if a.len() != 4 {
-        eprintln!("usage: restdemo_bench <host:port> <path> <connections> <seconds>");
+    if a.len() < 4 || a.len() > 6 {
+        eprintln!("usage: restdemo_bench <host:port> <path> <connections> <seconds> [method] [body]");
         std::process::exit(2);
     }
+    let method = a.get(4).cloned().unwrap_or_else(|| "GET".to_string());
+    let body = a.get(5).cloned().unwrap_or_default();
     let (addr, path) = (a[0].clone(), a[1].clone());
     let conns: usize = a[2].parse().expect("connections");
     let secs: u64 = a[3].parse().expect("seconds");
@@ -28,7 +34,8 @@ async fn main() {
     let mut tasks = Vec::new();
     for _ in 0..conns {
         let (addr, path) = (addr.clone(), path.clone());
-        tasks.push(tokio::spawn(async move { drive(&addr, &path, deadline).await }));
+        let (method, body) = (method.clone(), body.clone());
+        tasks.push(tokio::spawn(async move { drive(&addr, &path, &method, &body, deadline).await }));
     }
 
     let mut latencies: Vec<u64> = Vec::new();
@@ -58,13 +65,20 @@ async fn main() {
 }
 
 /// One keep-alive connection, issuing requests back to back until the deadline.
-async fn drive(addr: &str, path: &str, deadline: Instant) -> Result<Vec<u64>, u64> {
+async fn drive(addr: &str, path: &str, method: &str, body: &str, deadline: Instant) -> Result<Vec<u64>, u64> {
     let mut stream = match TcpStream::connect(addr).await {
         Ok(s) => s,
         Err(_) => return Err(1),
     };
     let _ = stream.set_nodelay(true);
-    let req = format!("GET {path} HTTP/1.1\r\nHost: b\r\n\r\n");
+    let req = if body.is_empty() {
+        format!("{method} {path} HTTP/1.1\r\nHost: b\r\n\r\n")
+    } else {
+        format!(
+            "{method} {path} HTTP/1.1\r\nHost: b\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        )
+    };
     let mut samples = Vec::with_capacity(4096);
     let mut buf = vec![0u8; 16 * 1024];
     let mut held = Vec::with_capacity(16 * 1024);

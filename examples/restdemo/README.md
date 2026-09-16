@@ -272,6 +272,26 @@ What **is** available and not yet run is the comparison the design note permits:
 framework-shaped equivalent on identical routes, on this machine, under this generator. A win
 there belongs to fixed routing and borrowed parsing rather than to Uredo.
 
+#### What the single store lock costs, measured
+
+The store is one `RwLock` over one `BTreeMap`, so every write excludes every read. At 48 read
+connections against 16 concurrent writers sustaining 71,626 writes per second:
+
+| | reads/s | p99 |
+|---|---|---|
+| reads alone | 129,739 | 1,010 µs |
+| reads with writers | 111,658 (**−14%**) | 1,380 µs (**+37%**) |
+
+Real, and smaller than the shape of the design suggests — the critical sections are short. Part
+of even that 14% is the writers competing for CPU rather than for the lock, so it is an upper
+bound on the lock's own cost.
+
+The first attempt at this measured nothing: a shell `curl` loop as the writer runs at a few
+hundred requests per second against 130,000 reads, and reporting that as "no contention" would
+have been reporting the loop's speed. The generator takes a method and body now, and the control
+is that the writer alone sustains 133,995/s — so when it runs beside the readers it is genuinely
+competing.
+
 #### A retraction
 
 An earlier version of this section reported **39,495 against 39,219 rps and called it parity. That
