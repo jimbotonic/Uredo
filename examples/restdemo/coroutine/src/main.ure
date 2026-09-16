@@ -1,0 +1,38 @@
+##! The same service shape, on stackful coroutines instead of futures.
+##!
+##! `may_minihttp` is the stack the TechEmpower front-runner uses. The interesting part for Uredo
+##! is what it does *not* need: no `async fn`, no `.await`, no futures. A coroutine handler is
+##! written as straight-line blocking code, which is the shape Uredo already spells best.
+
+use std::io
+
+use may_minihttp::{HttpService, HttpServiceFactory, Request, Response}
+
+@derive(Clone)
+struct Service
+
+impl HttpService for Service:
+    ## `req` is by value in the trait, so it needs `take`: the mode a foreign trait fixes is the
+    ## trait's, and §10.2's default would have borrowed it.
+    fn call(self: inout, req: take Request, rsp: inout Response) -> io::Result<()>:
+        match req.path():
+            "/health":
+                rsp.header("Content-Type: application/json")
+                rsp.body("{\"status\":\"ok\",\"items\":0}")
+            _:
+                rsp.status_code(404, "Not Found")
+        Ok(())
+
+## `start` lives on the factory, not the service. One worker's service per accept loop.
+struct Factory
+
+impl HttpServiceFactory for Factory:
+    type Service = Service
+
+    fn new_service(self, _id: usize) -> Service:
+        Service
+
+fn main():
+    listen = std::env::var("CORO_ADDR").unwrap_or_else(_e => String::from("127.0.0.1:8080"))
+    server = Factory.start(listen).unwrap()
+    server.join().unwrap()
