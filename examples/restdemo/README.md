@@ -216,7 +216,42 @@ So the routing, store and ETag work costs about **16%** of what this machine and
 can do at all; the other 84% is hyper, loopback and the generator. That is the useful reading, and
 it is the only one this setup supports.
 
-#### Why there is no table against Rapidoid or TechEmpower here
+#### Against a TechEmpower front-runner, built and run here
+
+The comparison that *does* transfer is one run on this machine. `may-minihttp` — a Rust framework
+in the top tier of TechEmpower's final round — was fetched, built and run locally against a real
+Postgres with the benchmark's own schema, so its code path is upstream. Only two things differ
+from the harness: the database host, because `tfb-database` is a name that exists only inside it,
+and the listen address.
+
+Same generator, 128 connections, 8 seconds, server pinned to cpus 0–7:
+
+| | rps | what it does |
+|---|---|---|
+| `may-minihttp` `/plaintext` | 353,986 | a fixed 13-byte body |
+| `may-minihttp` `/json` | 257,625 | serialise `{"message":"Hello, World!"}` |
+| **uredo `/health`** | **216,904** | serialise a two-field struct |
+| floor: hyper, fixed body | 196,390 | nothing at all |
+| **uredo `/items/1`** | **194,919** | lock, lookup, clone, serialise 8 fields, ETag |
+
+Over three repetitions with the order reversed each time, `uredo /health` measured **75%, 76% and
+99%** of `may-minihttp /json` — median about **76%**, on comparable work.
+
+Two readings, and the second matters more:
+
+- **The gap is mostly hyper, not Uredo.** `may-minihttp` beats a *bare hyper server returning a
+  fixed body* by 31%, because it does not use hyper — it has its own HTTP implementation on
+  coroutines. Anything built on hyper, in any language, is bounded near that floor.
+- **`uredo /items/1` matches bare hyper while doing real work** — a read lock, a map lookup, a
+  clone, an eight-field serialisation and an FNV hash for the ETag.
+
+Caveats that are not decoration: one desktop with client and server sharing it, no pipelining,
+run-to-run spread of 25–30%, and a single workload shape.
+
+`bench/against-tfb.sh` rebuilds that setup — database, schema, framework source and the two
+repointings — so the comparison can be re-run rather than taken on trust.
+
+#### Why the published numbers are not quoted beside these
 
 Those numbers do not transfer, and putting them beside these would be worse than saying nothing:
 
