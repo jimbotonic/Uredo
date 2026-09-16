@@ -86,6 +86,23 @@ That is worth stating plainly next to the throughput: part of what the faster st
 bought by doing less, and the released version of it does not support a feature this service
 has. The published number and the feature set are not independent.
 
+**What "unreleased master" means here**, because it is a real dependency risk rather than a
+detail. A crates.io version is frozen: `0.1.11` is the same bytes forever. A git dependency
+builds whatever the branch points at, so the same `cargo build` can produce different code on
+different days. Worse in this case, upstream has not cut a release since, so the master commit
+*still calls itself 0.1.11* — the version number identifies nothing and only the commit does:
+
+```
+source = "git+https://github.com/Xudong-Huang/may_minihttp.git?rev=826a761…#826a761…"
+version = "0.1.11"
+```
+
+It is therefore pinned to `rev = "826a761…"`, which is exactly what `may-minihttp`'s own manifest
+does for its `may_postgres` dependency. Pinning makes the build reproducible; it does not make
+the dependency releasable, since **a crate with a git dependency cannot be published to
+crates.io at all**. That is fine for a spike whose job is to answer a question, and it is why
+this is a spike rather than the service.
+
 ## What it does not say
 
 - **One endpoint.** `/health` against `/json`, which is comparable work. The real service's

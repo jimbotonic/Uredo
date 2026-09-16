@@ -7,7 +7,12 @@ description = "The same service on stackful coroutines: only the HTTP edge diffe
 
 [dependencies]
 may = "0.3"
-may_minihttp = { git = "https://github.com/Xudong-Huang/may_minihttp.git" }   # master: 0.1.11 cannot set a dynamic header
+# A git dependency, pinned to a commit rather than left on a moving branch — the same thing
+# may-minihttp's own manifest does for `may_postgres`. The published 0.1.11 takes `&'static str`
+# in `header()`, so an ETag computed per response cannot be expressed; this commit accepts a
+# `String`. Note the version number is still "0.1.11": upstream has not cut a release, so the
+# number identifies nothing and the hash is what pins the code.
+may_minihttp = { git = "https://github.com/Xudong-Huang/may_minihttp.git", rev = "826a761933c53c7927d55e92443691065dcc5b7e" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 brotli = { version = "9", default-features = false, features = ["std"] }
