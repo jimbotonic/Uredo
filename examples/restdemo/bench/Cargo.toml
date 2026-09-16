@@ -6,6 +6,10 @@ rust-version = "1.85"
 description = "The load generator for examples/restdemo, so the comparison is reproducible"
 
 [dependencies]
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "io-util", "time"] }
 
 [profile.release]

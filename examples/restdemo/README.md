@@ -195,6 +195,48 @@ no runtime and the generated Rust is what runs. The two binaries differ by 152 b
 identical release profiles, which is the other reason to disbelieve any gap this measurement
 might have shown.
 
+#### How fast it is, and what that can be compared to
+
+`bench/target/release/floor` is a hyper server that returns a fixed 15-byte body and does nothing
+else. It exists because without it the service's numbers are uninterpretable: at 32 connections
+`/health` measured 166,332 rps and the floor measured 165,567 — **the service was indistinguishable
+from a server that does nothing**, which means the harness was the bottleneck and the number was
+the generator's, not ours.
+
+At 128 connections, where there is headroom:
+
+| | rps | p50 | share of the floor |
+|---|---|---|---|
+| floor (fixed body, no work) | 221,638 | — | 100% |
+| `/health` | 204,751 | 535 µs | **92%** |
+| `/items/1` (lock, lookup, clone, serialise, ETag) | 187,923 | 599 µs | **84%** |
+| `/items` (50 items serialised) | 89,252 | 1,350 µs | 40% |
+
+So the routing, store and ETag work costs about **16%** of what this machine and this HTTP stack
+can do at all; the other 84% is hyper, loopback and the generator. That is the useful reading, and
+it is the only one this setup supports.
+
+#### Why there is no table against Rapidoid or TechEmpower here
+
+Those numbers do not transfer, and putting them beside these would be worse than saying nothing:
+
+- **Different machines.** Published figures come from server-class hardware with the client on a
+  *separate* box over 10GbE. Here client and server share one 16-core desktop and compete for it.
+- **Different workload.** The very large published figures are almost always the *plaintext* test:
+  a fixed ~13-byte body, **pipelined**, with many requests in flight per connection. This
+  generator does not pipeline, and `/items/1` takes a read lock, looks up a `BTreeMap`, clones,
+  serialises and hashes the body for an ETag.
+- **Different client and concurrency.** Tuned `wrk` thread and connection counts per framework
+  against a fixed 128 connections here.
+
+Any of those alone moves throughput by more than the differences anyone would be comparing. The
+honest way to get a cross-framework number is to run this service *in* the other harness, on its
+hardware, under its rules — not to quote two numbers taken under different conditions.
+
+What **is** available and not yet run is the comparison the design note permits: a
+framework-shaped equivalent on identical routes, on this machine, under this generator. A win
+there belongs to fixed routing and borrowed parsing rather than to Uredo.
+
 #### A retraction
 
 An earlier version of this section reported **39,495 against 39,219 rps and called it parity. That
