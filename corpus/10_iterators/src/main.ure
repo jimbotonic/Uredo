@@ -38,5 +38,5 @@ fn main():
     paired: Vec<String> = labels.iter().zip(amounts.iter()).map(((l, a)) => format("{l}={a}")).collect()
     print("{}", paired.join(","))
     max_sale = sales.iter().max_by_key(s => s.amount).map(s => s.amount).unwrap_or(0)
-    (evens, odds): (Vec < u32 >, Vec < u32 >) = amounts.iter().partition(a => *a % 2 == 0)
+    (evens, odds): (Vec<u32>, Vec<u32>) = amounts.iter().partition(a => *a % 2 == 0)
     print("max {max_sale}, {} even, {} odd", evens.len(), odds.len())

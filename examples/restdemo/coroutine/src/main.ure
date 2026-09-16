@@ -1,38 +1,179 @@
-##! The same service shape, on stackful coroutines instead of futures.
+##! The same service on stackful coroutines instead of futures.
 ##!
-##! `may_minihttp` is the stack the TechEmpower front-runner uses. The interesting part for Uredo
-##! is what it does *not* need: no `async fn`, no `.await`, no futures. A coroutine handler is
-##! written as straight-line blocking code, which is the shape Uredo already spells best.
+##! **Only the HTTP edge is here.** The store, the model, the query parser, the representations,
+##! the ETag and the router are the service's own library, used as a dependency — so this is one
+##! implementation of the service with two front ends, not two services.
+##!
+##! What the coroutine stack does not need is the point: no `async fn`, no `.await`, no futures.
+##! A handler is straight-line blocking code, which is the shape Uredo spells most directly, and
+##! `async` blocks are the one construct that still needs `rust { }` (§38, held with D51) — the
+##! tokio edge uses one, this one uses none.
 
 use std::io
 
 use may_minihttp::{HttpService, HttpServiceFactory, Request, Response}
+use restdemo::error::Error
+use restdemo::etag
+use restdemo::query::Query
+use restdemo::repr::Positional
+
+## A foreign crate's `Copy` types are not known-Copy from here: `@copy use` says so (§10.1).
+@copy use restdemo::repr::Coding
+@copy use restdemo::repr::Wire
+use restdemo::router::{resolve, Route}
+use restdemo::store::Store
+
+use std::sync::Arc
 
 @derive(Clone)
-struct Service
+struct Service:
+    state: Arc<Store>
 
 impl HttpService for Service:
-    ## `req` is by value in the trait, so it needs `take`: the mode a foreign trait fixes is the
-    ## trait's, and §10.2's default would have borrowed it.
+    ## A foreign trait fixes its own parameter modes (D53 covers std traits only), so `take` is
+    ## written where §10.2 would have borrowed.
     fn call(self: inout, req: take Request, rsp: inout Response) -> io::Result<()>:
-        match req.path():
-            "/health":
+        match self.dispatch(&req):
+            Ok((status, body, headers)):
+                rsp.status_code(status as usize, status_text(status))
+                for h in take headers:            # D12: `for` borrows unless told
+                    rsp.header(h)
+                rsp.body_vec(body)
+            Err(e):
+                rsp.status_code(e.status() as usize, status_text(e.status()))
                 rsp.header("Content-Type: application/json")
-                rsp.body("{\"status\":\"ok\",\"items\":0}")
-            _:
-                rsp.status_code(404, "Not Found")
+                rsp.body_vec(format("{{\"error\":{:?}}}", e.message()).into_bytes())
         Ok(())
 
-## `start` lives on the factory, not the service. One worker's service per accept loop.
-struct Factory
+impl Service:
+    ## One request to a status, a body and its headers. Everything it calls is the library's.
+    fn dispatch(self, req: &Request) -> (u16, Vec<u8>, Vec<String>) throws Error:
+        path = req.path()
+        (route_path, raw_query) = match path.split_once('?'):
+            Some((p, q)): (p, q)
+            None: (path, "")
+        let Some(found) = resolve(req.method(), route_path) else:
+            throw Error::NotFound
+        wants = negotiate(req)
+        match found:
+            Route::Health: self.send(200, &self.state.health(), &wants)?
+            Route::ListItems:
+                filter = Query::parse(raw_query)?
+                self.send(200, &self.state.select(&filter), &wants)?
+            Route::GetItem(id):
+                let Some(item) = self.state.get(id) else:
+                    throw Error::NotFound
+                self.send(200, &item, &wants)?
+            _: throw Error::BadRequest(String::from("this edge serves reads only"))
+
+    ## The same three steps as the tokio edge: shape, compress, tag.
+    ## A signature breaks inside its brackets: a line starting with `->` is not a continuation.
+    fn send<T: serde::Serialize + Positional>(
+        self,
+        status: u16,
+        value: &T,
+        wants: &Wanted,
+    ) -> (u16, Vec<u8>, Vec<String>) throws Error:
+        shaped = match wants.wire:
+            Wire::Keyed: serde_json::to_vec(value)?
+            Wire::Positional: serde_json::to_vec(&value.positional())?
+        var body = shaped
+        var coding = Coding::Identity
+        if wants.coding == Coding::Brotli && body.len() > 256:
+            body = compress(&body)?
+            coding = Coding::Brotli
+        tag = etag::of(&body)
+        if let Some(offered) = wants.if_none_match.as_deref():
+            if etag::matches(offered, &tag):
+                return (304, Vec::new(), headers(&tag, wants.wire, coding))
+        ## bound rather than returned bare: a tail beginning with `(` reads as a call on the
+        ## line above it
+        sent = (status, body, headers(&tag, wants.wire, coding))
+        sent
+
+struct Wanted:
+    wire: Wire
+    coding: Coding
+    if_none_match: String?
+
+fn negotiate(req: &Request) -> Wanted:
+    var accept = None
+    var encoding = None
+    var inm = None
+    for h in req.headers():
+        name = h.name.to_ascii_lowercase()
+        value = String::from_utf8_lossy(h.value).to_string()
+        if name == "accept":
+            accept = Some(value)
+        else if name == "accept-encoding":
+            encoding = Some(value)
+        else if name == "if-none-match":
+            inm = Some(value)
+    Wanted {
+        wire: Wire::of(accept.as_deref()),
+        coding: Coding::of(encoding.as_deref()),
+        if_none_match: inm,
+    }
+
+fn headers(tag: str, wire: Wire, coding: Coding) -> Vec<String>:
+    var out = Vec::from([
+        format("Content-Type: {}", wire.content_type()),
+        format("ETag: {tag}"),
+        String::from("Vary: accept, accept-encoding"),
+    ])
+    if coding == Coding::Brotli:
+        out.push(String::from("Content-Encoding: br"))
+    out
+
+fn compress(body: [u8]) -> Vec<u8> throws Error:
+    var out = Vec::new()
+    rust {
+        {
+            use ::std::io::Write;
+            let mut w = ::brotli::CompressorWriter::new(&mut out, 4096, 5, 22);
+            if w.write_all(body).is_err() {
+                return ::core::result::Result::Err(
+                    ::restdemo::error::Error::Internal("brotli".to_string()),
+                );
+            }
+        }
+    }
+    out
+
+fn status_text(code: u16) -> &'static str:
+    match code:
+        200: "OK"
+        304: "Not Modified"
+        400: "Bad Request"
+        404: "Not Found"
+        _: "Error"
+
+struct Factory:
+    state: Arc<Store>
 
 impl HttpServiceFactory for Factory:
     type Service = Service
 
     fn new_service(self, _id: usize) -> Service:
-        Service
+        Service { state: Arc::clone(&self.state) }
 
 fn main():
     listen = std::env::var("CORO_ADDR").unwrap_or_else(_e => String::from("127.0.0.1:8080"))
-    server = Factory.start(listen).unwrap()
+    store = Store::new()
+    ## This edge serves reads, so a benchmark cannot seed it over HTTP the way the tokio edge is
+    ## seeded. `CORO_SEED=n` puts the same n rows in before the listener starts.
+    seed: usize = std::env::var("CORO_SEED").ok().and_then(v => v.parse().ok()).unwrap_or(0)
+    for n in 0..seed:
+        name = format("item-{n}")
+        let Ok(_item) = store.create(restdemo::model::NewItem {
+            name,
+            tag: None,
+            priority: None,
+            weight: None,
+            labels: Some(Vec::from([String::from("alpha"), String::from("beta")])),
+            meta: None,
+        }) else:
+            break
+    factory = Factory { state: Arc::new(store) }
+    server = factory.start(listen).unwrap()
     server.join().unwrap()

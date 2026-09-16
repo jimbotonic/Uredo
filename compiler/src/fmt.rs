@@ -388,6 +388,9 @@ fn render(toks: &[Token], openers: &mut Vec<Opener>, line_indent: usize, line_no
     let mut prev: Option<&Tok> = None;
     let mut type_ctx = type_line; // after `:` / `->` in a signature or annotation, until `=`, `,`, `)`
     let mut generic_depth = 0i32;
+    // Parentheses opened while already in a type context: a tuple type. Its members are types
+    // too, so neither the commas between them nor its own `)` may end the context.
+    let mut type_paren = 0i32;
     // is this a `fn`/`struct`/`impl`/`trait`/`type` header line? (types on the right of `:` and `->`)
     let header = matches!(&toks[0].tok, Tok::Ident(w) if ["fn", "pub", "struct", "impl", "trait", "type", "enum", "async", "unsafe", "const", "static"].contains(&w.as_str()));
     let mut use_brace = false;
@@ -495,13 +498,21 @@ fn render(toks: &[Token], openers: &mut Vec<Opener>, line_indent: usize, line_no
                     use_brace = true;
                 }
                 openers.push(Opener { kind, line_indent, opened_on: line_no, last_line_ends_with_comma: false, is_block_arg: false });
-                if kind == '(' && generic_depth == 0 && !type_line {
+                // A `(` normally ends a type context — `fn f(a: u8)` opens a parameter list. But
+                // a `(` *inside* one is a tuple type, and its members are still types: without
+                // this guard `-> (u16, Vec<u8>)` on the closing line of a multi-line signature
+                // had its `<` spaced as a comparison and became `Vec < u8 >`.
+                if kind == '(' && type_ctx {
+                    type_paren += 1;
+                } else if kind == '(' && generic_depth == 0 && !type_line {
                     type_ctx = false;
                 }
             }
             Tok::Punct(")") | Tok::Punct("]") | Tok::Punct("}") => {
                 openers.pop();
-                if generic_depth == 0 && !type_line {
+                if matches!(&t.tok, Tok::Punct(")")) && type_paren > 0 {
+                    type_paren -= 1;
+                } else if generic_depth == 0 && !type_line {
                     type_ctx = false;
                 }
                 if matches!(&t.tok, Tok::Punct("}")) {
@@ -516,7 +527,7 @@ fn render(toks: &[Token], openers: &mut Vec<Opener>, line_indent: usize, line_no
             }
             Tok::Punct("->") => type_ctx = true,
             Tok::Punct("=") | Tok::Punct(",") => {
-                if generic_depth == 0 && !type_line {
+                if generic_depth == 0 && !type_line && type_paren == 0 {
                     type_ctx = false;
                 }
             }

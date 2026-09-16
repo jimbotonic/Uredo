@@ -46,6 +46,46 @@ That is the answer to "is the language the bottleneck": it is not, and it never 
 generated Rust is the same work, so swapping the HTTP stack moves the number and swapping the
 surface syntax does not. It is the same finding as the twin benchmark from the other direction.
 
+## The full read path, and a prediction that was wrong
+
+`/items/1` is now served by this edge too — the same lock, lookup, clone, eight-field
+serialisation and ETag as the tokio one, because **it is the same code**: the store, model, query
+parser, representations, ETag and router come from the service's own library as a dependency.
+Only the HTTP edge is written twice.
+
+Before measuring, the prediction was that the 28% seen on `/health` would **shrink**, since
+`/items/1` spends a larger share of its time in our code and none of that changes with the stack.
+
+| | rep 1 | rep 2 | rep 3 |
+|---|---|---|---|
+| hyper `/items/1` | 152,644 | 159,823 | 149,969 |
+| **coroutines `/items/1`** | **226,732** | **235,414** | **214,513** |
+| | +48% | +47% | +43% |
+
+**It grew, to about +47%.** The prediction was wrong and it is recorded because being wrong in a
+stated direction is worth more than not having said anything.
+
+The likely reason, offered as a hypothesis rather than a conclusion: the hyper edge builds a
+`Response` through a builder with a `HeaderMap`, then copies the body into `Bytes`; the coroutine
+edge pushes headers into a fixed array and moves the `Vec`. Both costs scale with the number of
+headers and the size of the body, so the *more* a response carries, the more the hyper edge pays.
+
+One asymmetry in our own code is part of it and should not be hidden: on the hyper edge
+`/health` goes through `value_out`, which sets one header, while `/items/1` goes through
+`value_out_cached`, which sets four. On the coroutine edge both set four. So some of the widening
+is our handler, not the stack.
+
+## What this cost, which is the part nobody advertises
+
+`may_minihttp` **0.1.11 — the version the TechEmpower entry itself depends on — cannot set a
+header computed at runtime.** Its `header()` takes `&'static str`. An ETag is a hash of the body,
+so it cannot be expressed at all; this port depends on the git master, where
+`IntoResponseHeader` accepts a `String`.
+
+That is worth stating plainly next to the throughput: part of what the faster stack buys is
+bought by doing less, and the released version of it does not support a feature this service
+has. The published number and the feature set are not independent.
+
 ## What it does not say
 
 - **One endpoint.** `/health` against `/json`, which is comparable work. The real service's

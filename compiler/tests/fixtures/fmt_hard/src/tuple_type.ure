@@ -1,0 +1,20 @@
+## A generic inside a tuple type, on the closing line of a multi-line signature.
+##
+## A `(` ends a type context — `fn f(a: u8)` opens a parameter list — but a `(` *inside* one is a
+## tuple type whose members are types too. Without that distinction the commas between them ended
+## the context and `<` was spaced as a comparison, so `-> (u16, Vec<u8>)` became
+## `-> (u16, Vec < u8 >)`. Still valid Rust, which is why it went unnoticed: `corpus/10_iterators`
+## had carried `(Vec < u32 >, Vec < u32 >)` in its committed source. Found by writing the
+## coroutine edge of the REST demo, 2026-09-16.
+
+fn split(
+    values: [u32],
+) -> (Vec<u32>, Vec<u32>):
+    values.iter().partition(v => *v % 2 == 0)
+
+fn pairs(n: usize) -> (Vec<String>, Vec<(u8, Vec<u16>)>):
+    (Vec::new(), Vec::with_capacity(n))
+
+fn main():
+    (a, b): (Vec<u32>, Vec<u32>) = split(&[1, 2, 3])
+    print("{} {}", a.len(), b.len())
