@@ -1,0 +1,15 @@
+##! The binary: bind a listener and hand it to the library.
+
+use std::sync::Arc
+
+use restdemo_idiomatic::error::Error
+use restdemo_idiomatic::store::Store
+use tokio::net::TcpListener
+
+@rust(tokio::main(flavor = "multi_thread"))
+async fn main() throws Error:
+    ## The same environment variable as the other three, so one harness drives them all.
+    listen = std::env::var("RESTDEMO_ADDR").unwrap_or_else(_e => String::from("127.0.0.1:8080"))
+    listener = TcpListener::bind(&listen).await?
+    print("restdemo listening on http://{listen}")
+    restdemo_axum_ure::serve(listener, Arc::new(Store::new())).await?

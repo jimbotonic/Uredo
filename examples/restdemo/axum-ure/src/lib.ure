@@ -1,0 +1,124 @@
+##! The same service, with axum supplying the HTTP edge — this time in Uredo.
+##!
+##! Byte for byte the same behaviour as `axum/src/lib.rs`, so the only thing that differs between
+##! the two is the language. Everything below the edge is `restdemo_idiomatic`, imported rather
+##! than rewritten, which is what makes this a measurement of the edge and of nothing else.
+##!
+##! It is also the first time the passing modes meet a framework rather than a data structure. An
+##! extractor is a pattern parameter (P7); `HeaderMap` and `Bytes` are extractors too, and they
+##! arrive **by value**, which is what **take** says here and why it is not noise.
+
+use std::sync::Arc
+
+use axum::Router
+use axum::body::Body
+use axum::extract::{DefaultBodyLimit, Path, RawQuery, State}
+use axum::http::HeaderMap
+use axum::response::{IntoResponse, Response}
+use axum::routing::get
+use bytes::Bytes
+use tokio::net::TcpListener
+use tokio::sync::Notify
+
+use restdemo_idiomatic::error::Error
+use restdemo_idiomatic::handler::{MAX_BODY, Reply, Wants, no_content, raw, value_out, value_out_cached}
+use restdemo_idiomatic::model::{ItemPatch, NewItem}
+use restdemo_idiomatic::query::Query
+use restdemo_idiomatic::repr::{Coding, Wire}
+use restdemo_idiomatic::store::Store
+
+## The routing table.
+pub fn app(state: take Arc<Store>) -> Router:
+    Router::new()
+        .route("/health", get(health))
+        .route("/items", get(list).post(create))
+        .route("/items/{id}", get(read).patch(patch).delete(delete))
+        # the twin answers an unrouted path with its own JSON error body; so does this
+        .fallback(missing)
+        # the hand-rolled edge reads a body with a ceiling by hand; here it is a layer, and the
+        # request is rejected before the handler runs
+        .layer(DefaultBodyLimit::max(MAX_BODY))
+        .with_state(state)
+
+## Serve until the process is killed.
+pub async fn serve(listener: take TcpListener, state: take Arc<Store>) throws Error:
+    serve_until(listener, state, Arc::new(Notify::new())).await?
+
+## Serve until `shutdown` is notified, then stop accepting and let in-flight work finish.
+pub async fn serve_until(listener: take TcpListener, state: take Arc<Store>, shutdown: take Arc<Notify>) throws Error:
+    axum::serve(listener, app(state)).with_graceful_shutdown(notified(shutdown)).await?
+
+## The shutdown signal as a future, because a named function is one and Uredo has no async block.
+async fn notified(shutdown: take Arc<Notify>):
+    shutdown.notified().await
+
+## A service error, on its way to becoming a response.
+##
+## axum wants a rejection type that knows how to render itself. Ours already knows its status and
+## its message, so this is the adapter and not a second error surface.
+pub struct Fault(Error)
+
+impl From<Error> for Fault:
+    fn from(e: take Error) -> Fault:
+        Fault(e)
+
+impl IntoResponse for Fault:
+    fn into_response(self: take) -> Response:
+        body = format("{{\"error\":{:?}}}", self.0.message())
+        into(raw(self.0.status(), body.as_bytes()))
+
+## The shared representation code builds hyper responses; axum takes the same bytes.
+fn into(r: take Reply) -> Response:
+    r.map(Body::new)
+
+async fn health(State(s): State<Arc<Store>>) -> Response throws Fault:
+    into(value_out(200, () => Ok(s.health()))?)
+
+async fn list(State(s): State<Arc<Store>>, RawQuery(q): RawQuery, h: take HeaderMap) -> Response throws Fault:
+    filter = Query::parse(q.as_deref().unwrap_or(""))?
+    want = wants(h)
+    into(value_out_cached(200, &want, () => Ok(s.select(&filter)))?)
+
+async fn read(State(s): State<Arc<Store>>, Path(id): Path<String>, h: take HeaderMap) -> Response throws Fault:
+    found = number(id)?
+    want = wants(h)
+    into(value_out_cached(200, &want, () => s.get(found).ok_or(Error::NotFound))?)
+
+async fn create(State(s): State<Arc<Store>>, body: take Bytes) -> Response throws Fault:
+    new: NewItem = serde_json::from_slice(&body).map_err(Error::from)?
+    new.validate()?
+    item = s.create(new)?
+    into(raw(201, &serde_json::to_vec(&item).map_err(Error::from)?))
+
+async fn patch(State(s): State<Arc<Store>>, Path(id): Path<String>, body: take Bytes) -> Response throws Fault:
+    found = number(id)?
+    change: ItemPatch = serde_json::from_slice(&body).map_err(Error::from)?
+    item = s.patch(found, change).ok_or(Error::NotFound)?
+    into(raw(200, &serde_json::to_vec(&item).map_err(Error::from)?))
+
+async fn delete(State(s): State<Arc<Store>>, Path(id): Path<String>) -> Response throws Fault:
+    found = number(id)?
+    into(no_content(() => if s.delete(found): Ok(()) else: Err(Error::NotFound))?)
+
+async fn missing() -> Fault:
+    Fault(Error::NotFound)
+
+## `/items/abc` is a path this service does not have, which is a 404 and not a 400.
+##
+## `Path<u64>` would be the shorter extractor and would answer 400, because to axum a segment
+## that will not parse is a malformed request. The hand-rolled router returns nothing from the
+## same case and the dispatcher turns that into `NotFound`.
+fn number(segment: str) -> u64 throws Error:
+    segment.parse().map_err(_e => Error::NotFound)?
+
+## What the client asked for: the shape, the coding, and the tag it already holds.
+fn wants(h: HeaderMap) -> Wants:
+    Wants {
+        wire: Wire::of(text(h, "accept").as_deref()),
+        coding: Coding::of(text(h, "accept-encoding").as_deref()),
+        if_none_match: text(h, "if-none-match"),
+    }
+
+## One request header, owned, because `Wants` owns the one it keeps.
+fn text(h: HeaderMap, name: str) -> String?:
+    Some(h.get(name)?.to_str().ok()?.to_string())

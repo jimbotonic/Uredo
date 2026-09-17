@@ -275,22 +275,106 @@ there belongs to fixed routing and borrowed parsing rather than to Uredo.
 #### What the single store lock costs, measured
 
 The store is one `RwLock` over one `BTreeMap`, so every write excludes every read. At 48 read
-connections against 16 concurrent writers sustaining 71,626 writes per second:
+connections against 16 concurrent writers, median of four repetitions:
 
 | | reads/s | p99 |
 |---|---|---|
-| reads alone | 129,739 | 1,010 µs |
-| reads with writers | 111,658 (**−14%**) | 1,380 µs (**+37%**) |
+| reads alone | 144,411 | 971 µs |
+| reads with 64,334 writes/s alongside | 110,802 (**−23.3%**) | 1,121 µs (**+15.4%**) |
 
-Real, and smaller than the shape of the design suggests — the critical sections are short. Part
-of even that 14% is the writers competing for CPU rather than for the lock, so it is an upper
-bound on the lock's own cost.
+The per-repetition drops were −22.7%, −24.8%, −23.5% and −23.1%, so this one is repeatable in a
+way most numbers on this page are not. Part of it is the writers taking CPU rather than taking
+the lock, so 23% is an upper bound on the lock's own cost, and the control is that the writer
+alone sustains 116,196/s — it is genuinely able to compete.
 
-The first attempt at this measured nothing: a shell `curl` loop as the writer runs at a few
-hundred requests per second against 130,000 reads, and reporting that as "no contention" would
-have been reporting the loop's speed. The generator takes a method and body now, and the control
-is that the writer alone sustains 133,995/s — so when it runs beside the readers it is genuinely
-competing.
+The first attempt measured nothing: a shell `curl` loop as the writer runs at a few hundred
+requests per second against 130,000 reads, and reporting that as "no contention" would have been
+reporting the loop's speed. The generator takes a method and a body now.
+
+**These numbers replace the ones published here on 2026-09-17, which were wrong** — −14% and
++37%, against −23.3% and +15.4%. Both were understated or overstated for the same reason, and it
+is the next section.
+
+#### The benchmark harness was leaking servers, and had been for days
+
+`measure()` started each server with `pin … &` and recorded `$!` as its pid. `pin` is a shell
+*function*, and `$!` on a background function is the subshell bash forks to run it — not the
+server that subshell then starts. Every `kill` in the script killed the wrapper.
+
+Servers accumulated: across a run, across a session, across days. Seventy were found alive, some
+twenty-six hours old, each holding a tokio runtime's worth of parked threads. They were idle, so
+the damage was not what it first looked like — but the noise floor climbed run by run, and in the
+middle of the framework comparison below it reached **40.5%**, which is larger than anything this
+page tries to measure.
+
+The proof that it mattered: the axum comparison was run twice before the fix and twice after, and
+**the sign changed**. Before: −2.7% and −4.6%, with axum losing six paired runs out of six. After:
++4.5% and +1.7%. Had the comparison stopped at the second run, this page would carry a confident,
+carefully-controlled, six-for-six finding that axum costs 4.6% — and it would have been an
+artefact of the harness.
+
+Fixed by starting the server as a simple command so `$!` names it, by a `stop()` that escalates
+to `SIGKILL` and aborts the whole run if a server survives, and by a pre-flight check that
+refuses to measure anything while a server from an earlier run is alive.
+
+This is the third time on this page that a control caught something the measurement itself was
+happy to report. The pattern is not that the benchmarks were careless; it is that **a benchmark
+tells you what it measured, and only a control tells you whether that was the thing you meant.**
+
+#### The framework-shaped comparison
+
+`examples/restdemo/axum/` and `examples/restdemo/axum-ure/` are the same service with axum
+supplying the HTTP edge, in Rust and in Uredo. Both depend on the hand-written twin as a library,
+so the store, the model, the query grammar, the wire shapes, the ETag and the error surface are
+imported rather than rewritten: what differs between the four binaries is the edge, and nothing
+else. All four pass the same eleven tests, the axum ones running the twin's `tests/api.rs` and
+`tests/api.ure` with one name changed.
+
+Counting only the edge — the accept loop, the router, the dispatch, the extractors and the
+binary — with one tokenizer over both languages:
+
+| HTTP edge | lines | tokens |
+|---|---|---|
+| Rust, no framework | 170 | 1,612 |
+| Uredo, no framework | 142 | 1,505 |
+| Rust + axum | 102 | 1,181 |
+| Uredo + axum | **85** | **1,115** |
+
+Which separates cleanly, because the two effects barely interact:
+
+| | tokens | lines |
+|---|---|---|
+| the language alone, without a framework | −6.6% | −16.5% |
+| the language alone, with axum | −5.6% | −16.7% |
+| the framework alone, in Rust | −26.7% | −40.0% |
+| the framework alone, in Uredo | −25.9% | −40.1% |
+| both together | −30.8% | −50.0% |
+
+**The framework is worth four times what the language is worth here**, and saying so is the point
+of running it. Anyone choosing between "write it in Uredo" and "write it in Rust with axum" on
+token count alone should choose axum. The honest pitch is that they compose: axum in Uredo is the
+smallest of the four, and it is smaller than axum in Rust by about what Uredo is worth anywhere.
+
+Two things temper the language column. The −6.6% here is **half** the −13.4% this project
+publishes for its corpus, because an HTTP edge is unusually hostile to Uredo's savings: it is
+dense in type-heavy signatures and calls into foreign crates, where there are no braces, no
+`let` and no `//` to drop. And the Uredo edge carries 25 annotations against axum-in-Rust's 18 —
+the extractors arrive by value, so `take` appears on every `HeaderMap` and every `Bytes`, which
+is the mode being visible rather than the mode being free.
+
+On throughput there is nothing to report, which is the expected result twice over:
+
+| | median of per-pair differences | paired runs won | noise floor |
+|---|---|---|---|
+| axum vs hand-rolled hyper | +4.5%, then +1.7% | 5 of 6, then 3 of 6 | 18.1%, 40.5% |
+| Uredo + axum vs Rust + axum | +3.2% | 4 of 6 | 16.3% |
+
+Neither difference is resolvable by this harness on this machine. For the second row that is the
+§36 result again — generated Rust performs like written Rust, and a paired cross-crate benchmark
+cannot resolve a few percent. For the first, it means axum's router, extractors and tower stack
+cost nothing this workload can detect at ~110,000 requests per second, and `axum/src/bin/http1.rs`
+exists to check that the auto http1/http2 detection in `axum::serve` was not hiding a cost the
+rest of the framework was paying back.
 
 #### A retraction
 
@@ -311,8 +395,11 @@ numbers they replace:
   showed up as a confident **−12.3%** which was entirely the ordering. It is `ABBA` now, and the
   statistic is the median of per-pair differences rather than a difference of pooled medians.
 
-What this is **not**: a claim about any framework. The design permits exactly one other
-comparison — against a framework-shaped equivalent on identical routes — and it has not been run.
+A fourth thing came out of it later, and it is the leaking harness two sections above: `identify()`
+proved the right server was answering, and nothing proved the wrong ones had stopped.
+
+The framework-shaped comparison the design permits — against an equivalent on identical routes —
+has now been run, and is two sections above.
 
 ## What it cost, and what that bought
 

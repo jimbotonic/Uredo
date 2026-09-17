@@ -1,0 +1,25 @@
+[package]
+name = "restdemo_axum_ure"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "The axum edge again, written in Uredo, for the framework comparison"
+
+[dependencies]
+# The same domain crate the Rust axum version imports, so the three edges differ in the edge
+# alone. Depending on the Rust twin from Uredo is also the point being tested: a foreign crate's
+# generics, extractors and builder chains, used verbatim (D2).
+restdemo_idiomatic = { path = "../idiomatic" }
+
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "sync", "time"] }
+bytes = "1"
+serde_json = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "io-util", "time"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
