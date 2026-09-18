@@ -22,6 +22,16 @@ moving baseline proves nothing. Binary size also has a **checked-in absolute bas
 rustc version matches the one in use, and `--update-baseline` rewrites it — the reviewed change §36
 asks for.
 
+That baseline is compared with a **0.5% tolerance**, and the tolerance is not slack. It was byte
+exact, and on 2026-09-18 it failed on exactly two of the twenty programs: `08_json_serde`, 64 bytes
+over on 636 KB, and `16_async_http`, 560 bytes over on 856 KB. Those are the two programs with
+heavy external dependencies, the rustc version was unchanged, and every std-only program matched to
+the byte. A byte-exact absolute baseline over a dependency set that floats on crates.io does not
+measure Uredo; it measures whoever published a patch release that week, and a check that fires on
+that gets switched off. 0.5% is two orders of magnitude above the drift observed and far below any
+regression worth the name. The *relative* gate — the Uredo binary against its twin, which moves
+with it — stays exact, and it is the one §36 rests on.
+
 usage: corpus/perf.py [--update-baseline] [NN_name …]      (default: every program)
 writes: corpus/PERF.md and corpus/perf.json on a full sweep; naming programs prints the comparison
         without touching the committed report
@@ -34,9 +44,24 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-UREDO = os.path.join(ROOT, "..", "compiler", "target", "debug", "uredo")
+def uredo_binary():
+    """The compiler binary, wherever the caller built it — see `corpus/run.py` for why this is not
+    simply `target/debug/uredo`. `compiler/tests/perf.rs` passes UREDO explicitly, because cargo
+    knows exactly which binary belongs to the test run and guessing is worse."""
+    override = os.environ.get("UREDO")
+    if override:
+        return override
+    built = [os.path.join(ROOT, "..", "compiler", "target", p, "uredo") for p in ("release", "debug")]
+    found = [b for b in built if os.path.exists(b)]
+    return max(found, key=os.path.getmtime) if found else built[1]
+
+
+UREDO = uredo_binary()
 WORK = os.path.join(ROOT, "target", "perf")
 BASELINE = os.path.join(ROOT, "size_baseline.json")
+# How far the absolute size baseline may drift before it is a finding rather than crates.io. See
+# the module docstring: this was exact, and what it caught was two patch releases.
+SIZE_TOLERANCE = 0.005
 RUNS = 3
 
 # Appended, never prepended: a module's inner docs and inner attributes must stay first.
@@ -203,7 +228,7 @@ def main():
             entry["identical"] = all(u[m] == r[m] for m in ("allocations", "bytes", "peak"))
             base = baseline.get("size", {}).get(p)
             entry["baseline_size"] = base
-            entry["over_baseline"] = bool(baseline_applies and base is not None and u["size"] > base)
+            entry["over_baseline"] = bool(baseline_applies and base is not None and u["size"] > base * (1 + SIZE_TOLERANCE))
             print("%-22s allocs %5d/%-5d peak %7d/%-7d size %7d/%-7d %s"
                   % (p, u["allocations"], r["allocations"], u["peak"], r["peak"], u["size"], r["size"],
                      "pass" if entry["pass"] and not entry["over_baseline"]

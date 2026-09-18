@@ -2,6 +2,9 @@
 """The §43 corpus runner: for every program, run the Uredo version and the idiomatic Rust twin,
 compare their output, and compute the §37 metrics; write RESULTS.md and results.json.
 
+With program names as arguments (`run.py 01_hello`) it measures only those and writes nothing,
+which is how a publish gate proves this script still runs without paying for twenty cargo builds.
+
 usage: python3 corpus/run.py   (from the repository root; needs the compiler built in
 compiler/target/debug and the analyzer tools in docs/corpus-study/analyzer/target/release)
 """
@@ -10,9 +13,46 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CORPUS = ROOT / "corpus"
-UREDO = ROOT / "compiler/target/debug/uredo"
+def uredo_binary():
+    """The compiler binary, wherever the caller built it.
+
+    This named `target/debug/uredo` and nothing else. That works in any checkout where `cargo
+    build` has ever run, and fails in a fresh clone — where the README's own instructions build a
+    *release* binary and there is no debug one at all. So this script did not run from a clone even
+    after the tokenizer it needs was published; `scripts/verify-public.sh` found that on its first
+    run, which is the entire reason that script exists.
+    """
+    override = os.environ.get("UREDO")
+    if override:
+        return Path(override)
+    built = [ROOT / f"compiler/target/{p}/uredo" for p in ("release", "debug")]
+    found = [b for b in built if b.exists()]
+    return max(found, key=lambda b: b.stat().st_mtime) if found else built[1]
+
+
+UREDO = uredo_binary()
 METRICS = ROOT / "docs/corpus-study/roundtrip/tools/metrics.py"
-PARAMSHAPE = ROOT / "docs/corpus-study/analyzer/target/release/paramshape"
+ANALYZER = ROOT / "docs/corpus-study/analyzer"
+_paramshape = None
+
+
+def paramshape():
+    """The §37 inference-hit-rate tool, built on demand.
+
+    This was a path to a binary that something else was expected to have built. Nothing tells you
+    to build it, so in a fresh clone it is not there and this script dies on the first program —
+    the third distinct reason it did not run from a clone, each one found only after the previous
+    was fixed. It is 98 lines of `syn` and it is in this repository, so build it.
+    """
+    global _paramshape
+    if _paramshape is not None:
+        return _paramshape
+    exe = ANALYZER / "target/release/paramshape"
+    if not exe.exists() and (ANALYZER / "Cargo.toml").exists():
+        print("building paramshape (the §37 inference hit rate needs it)...", file=sys.stderr)
+        subprocess.run(["cargo", "build", "--release", "--quiet", "--bin", "paramshape"], cwd=ANALYZER)
+    _paramshape = exe
+    return exe
 ENV = dict(os.environ, CARGO_TARGET_DIR=str(CORPUS / "target"))
 
 THRESHOLDS = {"tokens": 10.0, "annotation_ratio": 0.5, "hit_rate": 90.0, "mapped": 80.0}
@@ -33,7 +73,12 @@ def metrics(path):
 
 
 def shapes(path):
-    rc, out, err = run([str(PARAMSHAPE), str(path)])
+    exe = paramshape()
+    if not exe.exists():
+        # Measured as "not measured", never as "passed": the §37 check below reads a missing hit
+        # rate as a failure, which is the only honest thing a check can do with an absent number.
+        return {}
+    rc, out, err = run([str(exe), str(path)])
     res = {}
     for line in out.splitlines():
         fn, idx, shape, generic = line.split("\t")
@@ -110,9 +155,28 @@ def diagnostics_mapping():
     return mapped, total
 
 
+def pct(part, whole):
+    """A percentage, or None when there is nothing to divide by.
+
+    Every one of these had a whole that cannot be zero over twenty programs, which is why none of
+    them was guarded — and why asking for one program was enough to crash the script. A measurement
+    tool that only works on the full set cannot be used to check that it still works."""
+    return round(100 * part / whole, 1) if whole else None
+
+
 def main():
     results = []
     programs = sorted(p for p in CORPUS.iterdir() if p.is_dir() and p.name[:2].isdigit())
+    # An optional filter, so a publish gate can prove this script still runs without paying for
+    # twenty pairs of cargo builds. `RESULTS.md` is only rewritten for a complete run — a partial
+    # one would silently replace the record with a fraction of it.
+    wanted = [a for a in sys.argv[1:] if not a.startswith("-")]
+    partial = bool(wanted)
+    if partial:
+        programs = [p for p in programs if any(w in p.name for w in wanted)]
+        if not programs:
+            print("no corpus program matches %s" % " ".join(wanted), file=sys.stderr)
+            return 1
     for prog in programs:
         name = prog.name
         # No wall-clock time is recorded. It was, and because it changes on every run `results.json`
@@ -182,22 +246,30 @@ def main():
     tra = sum(r["rust"]["tokens"] for r in app)
     summary = {
         "programs": len(results), "all_same_output": all(r["same_output"] for r in results),
-        "tokens_ure": tu, "tokens_rust": tr, "token_reduction_pct": round(100 * (tr - tu) / tr, 1),
-        "token_reduction_app_pct": round(100 * (tra - tua) / tra, 1),
-        "chars_ure": cu, "chars_rust": cr, "char_reduction_pct": round(100 * (cr - cu) / cr, 1),
-        "lines_ure": lu, "lines_rust": lr, "line_reduction_pct": round(100 * (lr - lu) / lr, 1),
-        "annotations_ure": au, "annotations_rust": ar, "annotation_ratio": round(au / ar, 3),
+        "tokens_ure": tu, "tokens_rust": tr, "token_reduction_pct": pct(tr - tu, tr),
+        "token_reduction_app_pct": pct(tra - tua, tra),
+        "chars_ure": cu, "chars_rust": cr, "char_reduction_pct": pct(cr - cu, cr),
+        "lines_ure": lu, "lines_rust": lr, "line_reduction_pct": pct(lr - lu, lr),
+        "annotations_ure": au, "annotations_rust": ar, "annotation_ratio": round(au / ar, 3) if ar else None,
         "sig_annotations_ure": su, "sig_annotations_rust": sr, "sig_annotation_ratio": round(su / sr, 3) if sr else None,
         "hit": hits, "params": params, "hit_rate_pct": round(100 * hits / params, 1) if params else None,
         "diagnostics_mapped": mapped, "diagnostics_total": dtotal, "mapped_pct": round(100 * mapped / dtotal, 1) if dtotal else None,
-        "raw_rust_lines": raw, "source_lines": src, "raw_rust_share_pct": round(100 * raw / src, 1),
+        "raw_rust_lines": raw, "source_lines": src, "raw_rust_share_pct": pct(raw, src),
     }
     checks = {
-        "token reduction ≥ 10% on application-style programs (1–15)": summary["token_reduction_app_pct"] >= THRESHOLDS["tokens"],
+        "token reduction ≥ 10% on application-style programs (1–15)": (summary["token_reduction_app_pct"] or 0) >= THRESHOLDS["tokens"],
         "parameter annotations ≤ ½ of idiomatic Rust's (signatures)": (summary["sig_annotation_ratio"] or 1) <= THRESHOLDS["annotation_ratio"],
         "inference hit rate ≥ 90% on non-generic parameters": (summary["hit_rate_pct"] or 0) >= THRESHOLDS["hit_rate"],
         "≥ 80% of barrier diagnostics mapped": (summary["mapped_pct"] or 0) >= THRESHOLDS["mapped"],
     }
+    if partial:
+        # A partial run measures what it was asked for and reports it, but the record on disk is a
+        # record of all twenty; replacing it with a fraction would be worse than not writing it.
+        print("\n".join(f"{r['program']}: tokens {r['token_reduction_pct']:+.1f}%, output "
+                        f"{'same' if r['same_output'] else 'DIFFERENT'}" for r in results))
+        print("partial run (%s): RESULTS.md and results.json left alone" % " ".join(wanted))
+        return 0 if summary["all_same_output"] else 1
+
     (CORPUS / "results.json").write_text(json.dumps({"summary": summary, "checks": checks, "programs": results}, indent=2))
 
     md = ["# §43 corpus — results (generated by `corpus/run.py`)", "",
@@ -220,7 +292,8 @@ def main():
     (CORPUS / "RESULTS.md").write_text("\n".join(md))
     print("\n".join(md[-12:]))
     print(json.dumps(summary, indent=1))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -102,6 +102,9 @@ fn generated_rust_does_not_allocate_more_or_exceed_its_size_baseline() {
     let (ok, out, err) = run(Command::new("python3")
         .arg(root().join("../corpus/perf.py"))
         .arg("01_hello")
+        // Cargo knows which binary belongs to this test run; the script should not have to guess,
+        // and guessing is what made `cargo test --release` fail in a clone that had no debug build.
+        .env("UREDO", env!("CARGO_BIN_EXE_uredo"))
         .current_dir(root().join("..")));
     assert!(ok, "the §36 comparison failed:\n{}{}", out, err);
     assert!(out.contains("1/1 pass"), "{}", out);

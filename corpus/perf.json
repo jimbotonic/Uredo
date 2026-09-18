@@ -406,7 +406,7 @@
     "allocations": 46,
     "bytes": 5685,
     "peak": 5576,
-    "size": 635728,
+    "size": 635792,
     "stable": true,
     "runs": [
      [
@@ -862,7 +862,7 @@
     "allocations": 30,
     "bytes": 24806,
     "peak": 23498,
-    "size": 855472,
+    "size": 856032,
     "stable": true,
     "runs": [
      [
@@ -919,7 +919,7 @@
     "allocations": 249,
     "bytes": 64112,
     "peak": 60472,
-    "size": 895216,
+    "size": 894864,
     "stable": true,
     "runs": [
      [
