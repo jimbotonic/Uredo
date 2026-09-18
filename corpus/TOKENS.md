@@ -6,6 +6,11 @@ given piece of code at one end of the range or the other.
 
 Reproduce with `python3 corpus/tokens.py`.
 
+The six `roundtrip/` pieces are cut from other people's crates and are not redistributed, so a
+clone measures the other 23 pairs and says so. Both the range and the rule survive that: **3.8% to
+18.5%, median 12.0%, token-weighted 10.5%, braces and semicolons 75% of everything removed**
+(r = +0.40). The figures below are the 29-pair ones.
+
 ## The range
 
 **−3.8% to −18.5% tokens, median −13.0%, token-weighted −10.6%, over 29 measured pairs.**

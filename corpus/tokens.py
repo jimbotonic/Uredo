@@ -84,6 +84,12 @@ def main():
 
     savings = sorted(x[3] for x in rows)
     n = len(savings)
+    # The six round-trip pieces are cut from other people's crates and are not redistributed, so a
+    # clone of the public repository measures 23 pairs rather than 29 and will not reproduce the
+    # aggregates in TOKENS.md exactly. Say so, rather than quietly printing a different number.
+    if not list(ROOT.glob("docs/corpus-study/roundtrip/p[0-9]_*")):
+        print("\n  note: the six round-trip pieces are not in this checkout, so this is the "
+              "23-pair figure;\n        TOKENS.md quotes 29 pairs, measured where they are present.")
     rt, ut = sum(total_r.values()), sum(total_u.values())
     print(f"\n  {n} pairs.  range {savings[0]:.1f}% to {savings[-1]:.1f}%,  median {savings[n // 2]:.1f}%,"
           f"  token-weighted {100 * (rt - ut) / rt:.1f}%")
