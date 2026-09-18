@@ -403,7 +403,7 @@ has now been run, and is two sections above.
 
 ## What it cost, and what that bought
 
-Two defects in the compiler, both found by writing this rather than by reading anything:
+Four defects in the compiler, every one found by writing this rather than by reading anything:
 
 - **The formatter deleted a closing `)`.** `tokio::spawn(rust { … })` — a multi-line `rust { }`
   block whose closing line also closes the call around it. The covered lines of a raw token are
@@ -425,7 +425,7 @@ Two defects in the compiler, both found by writing this rather than by reading a
   would let the loop be the tail. Fixed conservatively: any `break` inside, even a nested one,
   keeps the old behaviour.
 
-Seven authoring errors, which are the other deliverable:
+Thirteen authoring errors, which are the other deliverable:
 
 1. `@tokio::main` — an attribute whose path has `::` is forwarded as `@rust(tokio::main)`.
 2. The tail of a `-> T?` function is **not** wrapped in `Some`. Only `throws` bodies get §15.3's

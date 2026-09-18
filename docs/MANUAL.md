@@ -775,7 +775,7 @@ makes it a raw identifier — `gen` is `r#gen` to the debugger, because it is a 
 ## 17. Mistakes you will make
 
 These are not invented. They are the errors made while writing 1,786 lines of Uredo tooling, in the
-order of how often they came up (`tools/README.md` keeps the full list), and sixteen more from
+order of how often they came up (`tools/README.md` keeps the full list), and thirteen more from
 writing `examples/restdemo` (its README keeps those).
 
 Where a mistake below shows an `error:` with a section number in it, the compiler names the rule
