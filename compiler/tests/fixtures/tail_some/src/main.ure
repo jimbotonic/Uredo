@@ -1,0 +1,8 @@
+##! Negative fixture (§14, §27): `T?` is `Option<T>`, and nothing wraps a tail in `Some` —
+##! only `throws` wraps, and it wraps in `Ok` (§15.3). The diagnostic has to say which rule this is.
+
+fn pick(x: i32) -> i32?:
+    x
+
+fn main():
+    print("{:?}", pick(1))

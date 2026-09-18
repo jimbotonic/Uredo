@@ -31,8 +31,23 @@ fn uredo(args: &[&str]) -> (i32, String, String) {
     (out.status.code().unwrap_or(-1), strip(&out.stdout), strip(&out.stderr))
 }
 
+/// `fixtures/moved` is driven by three tests, and every `uredo` invocation rewrites that package's
+/// `target/uredo/` in place. Run in parallel they clobber each other's lowering, which surfaces as
+/// cargo reporting `couldn't read src/main.rs` from a directory another test is mid-way through
+/// rewriting. The three share the fixture on purpose — they are about one program — so the lock is
+/// the fix rather than three copies of it. It was always a race; it only started losing once there
+/// were enough other tests to make the window matter.
+static MOVED: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Take the lock, and do not care whether a failing test poisoned it: the poison would turn one
+/// real failure into three confusing ones.
+fn moved_fixture() -> std::sync::MutexGuard<'static, ()> {
+    MOVED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 #[test]
 fn use_after_take_is_translated() {
+    let _guard = moved_fixture();
     let (code, _, err) = uredo(&["check", "tests/fixtures/moved"]);
     assert_ne!(code, 0);
     assert!(err.contains("error[E0382]: `job` cannot be used here because `enqueue` takes ownership of it"), "{}", err);
@@ -47,6 +62,7 @@ fn use_after_take_is_translated() {
 
 #[test]
 fn immutable_receiver_is_translated() {
+    let _guard = moved_fixture();
     let (_, _, err) = uredo(&["check", "tests/fixtures/moved"]);
     assert!(err.contains("error[E0596]: `other` must be a `var` binding: `bump` takes `self: inout`"), "{}", err);
     assert!(err.contains("--> src/main.ure:22:5"), "{}", err);
@@ -179,6 +195,88 @@ fn borrowed_iterator_in_a_for_loop_is_translated() {
     assert!(err.contains("help: write `for … in take r`"), "{}", err);
 }
 
+// ----- the rules that speak Uredo where rustc can only speak Rust (§27) -----
+//
+// Each of these was a mistake made while writing `examples/restdemo`, and each used to reach the
+// programmer as a rustc type error about generated code. The assertions are on the wording,
+// because the wording is the feature: a translated diagnostic that does not name the rule is the
+// same diagnostic.
+
+#[test]
+fn an_optional_tail_is_not_wrapped_in_some() {
+    let (code, _, err) = uredo(&["check", "tests/fixtures/tail_some"]);
+    assert_ne!(code, 0);
+    assert!(err.contains("returns `i32?`, which is `Option<i32>`"), "{}", err);
+    assert!(err.contains("does not wrap a tail in `Some`"), "{}", err);
+    assert!(err.contains("help: write `Some(…)` around it, or return `None`"), "{}", err);
+    assert!(err.contains("wraps it in `Ok` (§15.3)"), "{}", err);
+}
+
+#[test]
+fn a_throws_tail_that_is_already_a_result_needs_a_question_mark() {
+    let (code, _, err) = uredo(&["check", "tests/fixtures/tail_result"]);
+    assert_ne!(code, 0);
+    assert!(err.contains("this tail is already a `Result`"), "{}", err);
+    assert!(err.contains("wraps its tail in `Ok` (§15.3)"), "{}", err);
+    assert!(err.contains("help: add `?`"), "{}", err);
+}
+
+#[test]
+fn returning_a_borrowed_parameter_names_the_passing_mode() {
+    let (code, _, err) = uredo(&["check", "tests/fixtures/return_param"]);
+    assert_ne!(code, 0);
+    assert!(err.contains("`s` is a parameter declared `s: String`, which is a shared borrow (§10.1)"), "{}", err);
+    assert!(err.contains("help: declare it `s: take String`"), "{}", err);
+}
+
+#[test]
+fn a_for_binding_that_is_a_borrow_says_so() {
+    let (code, _, err) = uredo(&["check", "tests/fixtures/for_borrow"]);
+    assert_ne!(code, 0);
+    assert!(err.contains("`for w in words` iterates by shared reference (D12)"), "{}", err);
+    assert!(err.contains("help: write `for w in take words`"), "{}", err);
+}
+
+#[test]
+fn an_optional_of_a_borrow_is_not_an_optional() {
+    let (code, _, err) = uredo(&["check", "tests/fixtures/option_borrow"]);
+    assert_ne!(code, 0);
+    assert!(err.contains("`String?` means `Option<String>`, and this is an `Option<&String>`"), "{}", err);
+    assert!(err.contains("the shorthand is for those two types only (§9.3)"), "{}", err);
+}
+
+#[test]
+fn a_two_parameter_closure_without_parentheses_is_not_an_unknown_name() {
+    let (code, _, err) = uredo(&["check", "tests/fixtures/closure_parens"]);
+    assert_ne!(code, 0);
+    assert!(err.contains("looks like the first parameter of a closure"), "{}", err);
+    assert!(err.contains("needs parentheses"), "{}", err);
+}
+
+/// The guard, and the reason the two tail rules carry one.
+///
+/// A mismatch that merely *happens* inside a function returning `T?`, or inside a `throws`
+/// function, is not the tail rule. Explaining it as one would be confidently wrong, and would send
+/// the reader to a line that is not the problem — worse than rustc's honest "mismatched types".
+#[test]
+fn the_tail_rules_do_not_fire_away_from_the_tail() {
+    let dir = std::env::temp_dir().join(format!("uredo-nontail-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"nontail\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n").unwrap();
+    // the mismatch is an argument in the middle of the body; the tail below it is correct
+    std::fs::write(
+        dir.join("src/main.ure"),
+        "fn want(o: i32?) -> bool:\n    o.is_some()\n\nfn pick(x: i32) -> i32?:\n    _b = want(x)\n    Some(x)\n\nfn main():\n    print(\"{:?}\", pick(1))\n",
+    )
+    .unwrap();
+    let (code, _, err) = uredo(&["check", dir.to_str().unwrap()]);
+    assert_ne!(code, 0);
+    assert!(err.contains("error[E0308]: mismatched types"), "rustc's own wording should survive: {}", err);
+    assert!(!err.contains("does not wrap a tail in `Some`"), "the tail rule fired away from the tail: {}", err);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ----- `uredo report` (§5.4) -----
 
 /// The bundle has to say which of §5.4's two kinds of failure this is, and be wrong in neither
@@ -186,6 +284,7 @@ fn borrowed_iterator_in_a_for_loop_is_translated() {
 /// the reporter's hand-written Rust.
 #[test]
 fn a_bug_bundle_says_which_kind_of_failure_it_found() {
+    let _guard = moved_fixture();
     let out_dir = std::env::temp_dir().join(format!("uredo-report-{}", std::process::id()));
 
     // a barrier diagnostic: use after `take`, which the program itself caused

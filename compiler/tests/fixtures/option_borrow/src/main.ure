@@ -1,0 +1,8 @@
+##! Negative fixture (§9.3, §27): `str` and `[T]` mean `&str` and `&[T]` under `?`; `String` does
+##! not. `String?` is `Option<String>`, and `Vec::first` yields `Option<&String>`.
+
+fn first(v: Vec<String>) -> String?:
+    v.first()
+
+fn main():
+    print("{:?}", first(Vec::new()))

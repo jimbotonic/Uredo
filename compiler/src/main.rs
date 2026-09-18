@@ -1365,6 +1365,194 @@ fn backticked(s: &str) -> Option<String> {
     Some(s[start..end].to_string())
 }
 
+/// The indentation of a line, in characters.
+fn indent_of(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+/// Whether a trimmed line opens a function, past whatever `pub`/`async`/`const` precede `fn`.
+fn is_fn_header(t: &str) -> bool {
+    let mut rest = t.trim_start();
+    loop {
+        if let Some(r) = rest.strip_prefix("pub(") {
+            match r.find(')') {
+                Some(i) => {
+                    rest = r[i + 1..].trim_start();
+                    continue;
+                }
+                None => return false,
+            }
+        }
+        let mut advanced = false;
+        for kw in ["pub", "async", "const", "unsafe"] {
+            if let Some(r) = rest.strip_prefix(kw) {
+                if r.starts_with(' ') {
+                    rest = r.trim_start();
+                    advanced = true;
+                    break;
+                }
+            }
+        }
+        if !advanced {
+            break;
+        }
+    }
+    rest.starts_with("fn ")
+}
+
+/// A rustc type with its path qualifiers dropped: `::core::option::Option<std::string::String>`
+/// becomes `Option<String>`.
+///
+/// Worth the twelve lines because every message below quotes a type back at the programmer, and
+/// the programmer wrote `String?`. Quoting `::core::option::Option<std::string::String>` at them
+/// would be answering a question about Uredo with a fact about the generated Rust.
+fn short_type(t: &str) -> String {
+    let mut out = String::new();
+    let mut seg = String::new();
+    for c in t.chars() {
+        if c.is_alphanumeric() || c == '_' {
+            seg.push(c);
+        } else if c == ':' {
+            seg.clear();
+        } else {
+            out.push_str(&seg);
+            seg.clear();
+            out.push(c);
+        }
+    }
+    out.push_str(&seg);
+    out
+}
+
+/// The two types rustc says did not match, as `(expected, found)`, with paths dropped.
+fn expected_found(text: &str) -> Option<(String, String)> {
+    let i = text.find("expected `")?;
+    let rest = &text[i + "expected `".len()..];
+    let j = rest.find('`')?;
+    let expected = rest[..j].to_string();
+    let after = &rest[j + 1..];
+    let k = after.find("found `")?;
+    let tail = &after[k + "found `".len()..];
+    let m = tail.find('`')?;
+    Some((short_type(&expected), short_type(&tail[..m])))
+}
+
+/// The declared type of `name` when it is a parameter of `signature` that was given no passing
+/// mode — which is to say a shared borrow (§10.1), with nothing of its own to give away.
+fn borrowed_parameter(signature: &str, name: &str) -> Option<String> {
+    let open = signature.find('(')?;
+    let close = signature.rfind(')')?;
+    if close <= open {
+        return None;
+    }
+    let mut depth = 0i32;
+    let mut current = String::new();
+    let mut params: Vec<String> = Vec::new();
+    for c in signature[open + 1..close].chars() {
+        match c {
+            '<' | '(' | '[' => {
+                depth += 1;
+                current.push(c);
+            }
+            '>' | ')' | ']' => {
+                depth -= 1;
+                current.push(c);
+            }
+            ',' if depth == 0 => params.push(std::mem::take(&mut current)),
+            _ => current.push(c),
+        }
+    }
+    params.push(current);
+    for p in params {
+        let Some((n, ty)) = p.trim().split_once(':') else { continue };
+        if n.trim() != name {
+            continue;
+        }
+        let ty = ty.trim();
+        if ty.starts_with("take ") || ty.starts_with("inout ") || ty.starts_with('&') {
+            return None;
+        }
+        return Some(ty.to_string());
+    }
+    None
+}
+
+/// `xs.fold(0, a, b => a + *b)`: `a` reads as an argument because a two-parameter closure was
+/// written without its parentheses. True when `name` is followed by `, <ident> =>`.
+///
+/// The check fires only on a name rustc has already failed to resolve, which is what keeps it off
+/// `opt.map_or(0, n => n + 1)` — the same shape, spelled correctly, where the first argument is a
+/// value that does resolve.
+fn reads_as_a_closure_parameter(line: &str, name: &str) -> bool {
+    let chars: Vec<char> = line.chars().collect();
+    let target: Vec<char> = name.chars().collect();
+    if target.is_empty() {
+        return false;
+    }
+    let mut i = 0;
+    while i + target.len() <= chars.len() {
+        let word_start = i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_');
+        if chars[i..i + target.len()] == target[..] && word_start {
+            let mut j = i + target.len();
+            while j < chars.len() && chars[j] == ' ' {
+                j += 1;
+            }
+            if j < chars.len() && chars[j] == ',' {
+                j += 1;
+                while j < chars.len() && chars[j] == ' ' {
+                    j += 1;
+                }
+                let start = j;
+                while j < chars.len() && (chars[j].is_alphanumeric() || chars[j] == '_') {
+                    j += 1;
+                }
+                if j > start {
+                    while j < chars.len() && chars[j] == ' ' {
+                        j += 1;
+                    }
+                    if chars[j..].starts_with(&['=', '>']) {
+                        return true;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
+/// What the Uredo source around a diagnostic says.
+///
+/// The mismatches these rules explain are not visible in rustc's types — they are visible in the
+/// declaration above the error. The enclosing signature says whether the function `throws` and
+/// what it returns; an enclosing `for` header says whether its source was left to the D12 borrow.
+/// Read from the source, because that is the text the message is going to quote back.
+struct Around {
+    signature: String,
+    /// The line the signature is on.
+    signature_line: usize,
+    /// The last line of its body that carries code — the tail expression, when it has one.
+    tail_line: Option<usize>,
+    /// The declared return type, between `->` and `throws` or the closing `:`.
+    returns: Option<String>,
+    throws: bool,
+    /// `(binding, source)` of an enclosing `for` that was given neither `take` nor `inout`.
+    borrowing_for: Option<(String, String)>,
+}
+
+impl Around {
+    /// Whether a diagnostic on this line is about the function's tail expression.
+    ///
+    /// The guard that keeps "Uredo does not wrap a tail in `Some`" off a mismatch that happens to
+    /// be somewhere else in a function returning `T?`. A confidently wrong explanation is worse
+    /// than rustc's honest one, because it sends the reader to the wrong line.
+    fn is_tail(&self, line: usize) -> bool {
+        // Generator-introduced code — the `Ok` a `throws` body wraps its tail in — is attributed
+        // to the declaration, so the signature's own line counts as the tail too.
+        self.tail_line == Some(line) || self.signature_line == line
+    }
+}
+
 impl Translator {
     fn new(pkg_dir: &Path, lowered: &Lowered) -> Translator {
         let mut ure_sources = BTreeMap::new();
@@ -1421,6 +1609,94 @@ impl Translator {
 
     fn elabs_on(&self, ure_file: &str, line: usize) -> Vec<&Elab> {
         self.maps.values().filter(|m| m.ure == ure_file).flat_map(|m| m.elabs.iter().filter(move |e| e.line == line)).collect()
+    }
+
+    /// The text a span covers, in the Uredo source.
+    fn span_text(&self, s: &MappedSpan) -> String {
+        self.ure_sources
+            .get(&s.ure_file)
+            .and_then(|ls| ls.get(s.ure_line - 1))
+            .map(|l| l.chars().skip(s.ure_col.saturating_sub(1)).take(s.width).collect())
+            .unwrap_or_default()
+    }
+
+    /// The enclosing signature and `for` header, found by walking outward through the indentation.
+    fn around(&self, file: &str, line: usize) -> Option<Around> {
+        let lines = self.ure_sources.get(file)?;
+        if line == 0 || line > lines.len() {
+            return None;
+        }
+        let mut indent = indent_of(&lines[line - 1]);
+        let mut borrowing_for = None;
+        let mut signature = None;
+        // The error can sit on the signature itself: generator-introduced code — the `Ok` a
+        // `throws` body wraps its tail in — is attributed to the declaration that caused it, so a
+        // scan that only looks upward finds no function at all.
+        if is_fn_header(lines[line - 1].trim_start()) {
+            signature = Some((lines[line - 1].clone(), line));
+        }
+        for i in (0..line - 1).rev() {
+            if signature.is_some() {
+                break;
+            }
+            let l = &lines[i];
+            let t = l.trim_start();
+            if t.is_empty() || t.starts_with('#') {
+                continue;
+            }
+            let ind = indent_of(l);
+            if ind >= indent {
+                continue;
+            }
+            indent = ind;
+            if borrowing_for.is_none() {
+                if let Some(rest) = t.strip_prefix("for ") {
+                    if let Some((bind, src)) = rest.split_once(" in ") {
+                        let src = src.trim().trim_end_matches(':').trim();
+                        if !src.starts_with("take ") && !src.starts_with("inout ") {
+                            borrowing_for = Some((bind.trim().to_string(), src.to_string()));
+                        }
+                    }
+                }
+            }
+            if is_fn_header(t) {
+                signature = Some((l.clone(), i + 1));
+                break;
+            }
+            if ind == 0 {
+                break;
+            }
+        }
+        let (signature, signature_line) = signature?;
+        // The body runs until the indentation returns to the signature's own level.
+        let sig_indent = indent_of(&signature);
+        let mut tail_line = None;
+        for i in signature_line..lines.len() {
+            let l = &lines[i];
+            let t = l.trim_start();
+            if t.is_empty() {
+                continue;
+            }
+            if indent_of(l) <= sig_indent {
+                break;
+            }
+            if !t.starts_with('#') {
+                tail_line = Some(i + 1);
+            }
+        }
+        let returns = signature
+            .split_once("->")
+            .map(|(_, r)| {
+                let r = r.trim();
+                let r = match r.find(" throws") {
+                    Some(i) => &r[..i],
+                    None => r,
+                };
+                r.trim().trim_end_matches(':').trim().to_string()
+            })
+            .filter(|r| !r.is_empty());
+        let throws = signature.contains(" throws");
+        Some(Around { signature, signature_line, tail_line, returns, throws, borrowing_for })
     }
 
     fn translate(&self, msg: &Value) -> String {
@@ -1520,14 +1796,86 @@ impl Translator {
                 notes.push(format!("help: declare it with `var {} = …` (§8.1)", var));
             }
             "E0308" => {
-                for e in self.elabs_on(&primary.ure_file, primary.ure_line) {
-                    if e.rule.contains("inserted") {
-                        notes.push(format!("note: Uredo elaborated `{}` to `{}`: {}", e.before, e.after.lines().next().unwrap_or(""), e.rule));
-                    } else if e.rule.contains("verbatim") {
-                        notes.push(format!("note: {}: arguments of `{}` are written as Rust wants them (`&x`, `&mut x`)", e.rule, e.callee.clone().unwrap_or_default()));
+                // A type mismatch on generated Rust is the commonest way an Uredo rule is met for
+                // the first time, and rustc can only report it as a mismatch: it does not know
+                // that `String?` was written, or that the parameter is a borrow because Uredo made
+                // it one. Five shapes below are re-worded as the rule the programmer actually hit;
+                // anything else keeps rustc's message and gains the elaboration notes.
+                let around = self.around(&primary.ure_file, primary.ure_line);
+                let types = expected_found(&rendered);
+                let named = self.span_text(primary).trim().to_string();
+                let mut explained = false;
+                if let (Some(a), Some((exp, found))) = (&around, &types) {
+                    let opt_inner = exp.strip_prefix("Option<").and_then(|t| t.strip_suffix('>'));
+                    let declared_optional = a.returns.as_deref().filter(|r| r.ends_with('?'));
+                    let at_tail = a.is_tail(primary.ure_line);
+                    if let (Some(decl), Some(inner)) = (declared_optional, opt_inner.filter(|_| at_tail)) {
+                        if inner == found {
+                            message = format!("this function returns `{}`, which is `{}`, and Uredo does not wrap a tail in `Some` for you", decl, exp);
+                            labels.insert(primary.ure_line, format!("this is a `{}`", found));
+                            notes.clear();
+                            notes.push("help: write `Some(…)` around it, or return `None`".into());
+                            notes.push("note: `throws` does wrap a tail, and wraps it in `Ok` (§15.3); `T?` has no such rule (§14)".into());
+                            explained = true;
+                        } else if found.strip_prefix("Option<&").and_then(|t| t.strip_suffix('>')) == Some(inner) {
+                            message = format!("`{}` means `{}`, and this is an `{}`", decl, exp, found);
+                            labels.insert(primary.ure_line, format!("borrowed: `{}`", found));
+                            notes.clear();
+                            notes.push(format!("help: `.cloned()` to own it, or declare the return type as a borrow the elision rule accepts (§9.7)"));
+                            notes.push(format!("note: `str` and `[T]` mean `&str` and `&[T]` under `?`, but `{}` means `{}` — the shorthand is for those two types only (§9.3)", decl, exp));
+                            explained = true;
+                        }
+                    }
+                    if !explained && at_tail && a.throws && found.starts_with("Result<") && !exp.starts_with("Result<") {
+                        message = "this tail is already a `Result`, and a `throws` body wraps its tail in `Ok` (§15.3)".to_string();
+                        labels.insert(primary.ure_line, format!("this is a `{}`", found));
+                        notes.clear();
+                        notes.push("help: add `?` to unwrap it, and the `throws` body will wrap what is left".into());
+                        explained = true;
+                    }
+                    if !explained && !named.is_empty() && *found == format!("&{}", exp) {
+                        if let Some((bind, src)) = a.borrowing_for.as_ref().filter(|(b, _)| *b == named) {
+                            message = format!("`{}` is a `{}`: `for {} in {}` iterates by shared reference (D12)", bind, found, bind, src);
+                            labels.insert(primary.ure_line, format!("a `{}`, where a `{}` is wanted", found, exp));
+                            notes.clear();
+                            notes.push(format!("help: write `for {} in take {}` to consume `{}`, or `{}.clone()` here", bind, src, src, bind));
+                            notes.push("note: a `for` source that is a place is borrowed; that is D12, and it is why a loop that looks like it moves does not (§16)".into());
+                            explained = true;
+                        } else if let Some(ty) = borrowed_parameter(&a.signature, &named) {
+                            message = format!("`{}` is a parameter declared `{}: {}`, which is a shared borrow (§10.1) — there is nothing here to give away", named, named, ty);
+                            labels.insert(primary.ure_line, format!("a `{}`, where a `{}` is wanted", found, exp));
+                            notes.clear();
+                            notes.push(format!("help: declare it `{}: take {}` to take ownership, or write `{}.clone()`", named, ty, named));
+                            notes.push("note: a parameter is a shared borrow unless its declaration says otherwise; `take` is the only annotation that transfers (§10.2)".into());
+                            explained = true;
+                        }
                     }
                 }
-                labels.insert(primary.ure_line, primary.label.clone());
+                if !explained {
+                    for e in self.elabs_on(&primary.ure_file, primary.ure_line) {
+                        if e.rule.contains("inserted") {
+                            notes.push(format!("note: Uredo elaborated `{}` to `{}`: {}", e.before, e.after.lines().next().unwrap_or(""), e.rule));
+                        } else if e.rule.contains("verbatim") {
+                            notes.push(format!("note: {}: arguments of `{}` are written as Rust wants them (`&x`, `&mut x`)", e.rule, e.callee.clone().unwrap_or_default()));
+                        }
+                    }
+                    labels.insert(primary.ure_line, primary.label.clone());
+                }
+            }
+            "E0425" => {
+                // `xs.fold(0, a, b => a + *b)` resolves as three arguments, and rustc reports the
+                // second as an unknown name. Saying so is true and useless: the mistake is the
+                // missing parentheses, and it is legible in the line.
+                let var = backticked(&message).unwrap_or_default();
+                let src = self.ure_sources.get(&primary.ure_file).and_then(|ls| ls.get(primary.ure_line - 1)).cloned().unwrap_or_default();
+                if !var.is_empty() && reads_as_a_closure_parameter(&src, &var) {
+                    message = format!("`{}` reads as an argument here, but it looks like the first parameter of a closure", var);
+                    labels.insert(primary.ure_line, "parsed as an argument".into());
+                    notes.clear();
+                    notes.push(format!("help: a closure with more than one parameter needs parentheses: write `({}, …) => …` (§17)", var));
+                } else {
+                    labels.insert(primary.ure_line, primary.label.clone());
+                }
             }
             "E0277" if message.contains("is not an iterator") => {
                 // a `for` source that Uredo borrowed but that is itself an iterator (§16)

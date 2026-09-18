@@ -1,0 +1,8 @@
+##! Negative fixture (§10.1, §27): a parameter is a shared borrow unless it says otherwise, so
+##! a `String` parameter has nothing to return. `take` is the fix, and the diagnostic says so.
+
+fn echo(s: String) -> String:
+    s
+
+fn main():
+    print("{}", echo(String::from("x")))

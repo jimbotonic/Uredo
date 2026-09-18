@@ -775,8 +775,13 @@ makes it a raw identifier — `gen` is `r#gen` to the debugger, because it is a 
 ## 17. Mistakes you will make
 
 These are not invented. They are the errors made while writing 1,786 lines of Uredo tooling, in the
-order of how often they came up (`tools/README.md` keeps the full list), and thirteen more from
+order of how often they came up (`tools/README.md` keeps the full list), and sixteen more from
 writing `examples/restdemo` (its README keeps those).
+
+Where a mistake below shows an `error:` with a section number in it, the compiler names the rule
+itself. That is deliberate and it is where the work goes: half of these used to arrive as a rustc
+type error about generated code, which is true, anchored to the right line, and no use at all if
+you do not already know the rule you broke.
 
 **Thinking `throws` says something about the value.** Four of the thirteen were this one, and one
 of them was made at seven sites in a single function. `throws` names what a function returns when
@@ -805,9 +810,21 @@ fn first(items: take Vec<u32>) -> u32?:
     items.into_iter().next()      # already an Option; `Some(…)` here would be wrong
 ```
 
-Two more in the same family, which Uredo does not yet catch: `throws` with no `->` is a **unit**
-return, so a body that yields a value has it discarded; and a tail that is already a `Result`
-needs `?`, or it becomes `Ok(Result<…>)`.
+Get that one backwards — a tail that is a plain value under a `T?` return — and the message names
+the asymmetry rather than leaving you with a type error:
+
+```text
+error[E0308]: this function returns `i32?`, which is `Option<i32>`, and Uredo does not wrap a
+              tail in `Some` for you
+2 |     x
+  |     ^ this is a `i32`
+  = help: write `Some(…)` around it, or return `None`
+  = note: `throws` does wrap a tail, and wraps it in `Ok` (§15.3); `T?` has no such rule (§14)
+```
+
+A third in the same family: a `throws` tail that is **already** a `Result` would be wrapped twice,
+and wants `?`. Uredo says so. (A fourth is still uncaught: `throws` with no `->` is a **unit**
+return, so a body that yields a value has it discarded.)
 
 **Forgetting that arguments to Rust functions are Rust's.** By a wide margin the most common.
 
@@ -831,10 +848,20 @@ error: the passing mode goes on the type: write `name: take T` (§6.1)
 **Returning a `String` parameter.** A `String` parameter is a borrow, so there is nothing to return:
 
 ```text
-error[E0308]: expected `String`, found `&String`
+error[E0308]: `s` is a parameter declared `s: String`, which is a shared borrow (§10.1) —
+              there is nothing here to give away
+  = help: declare it `s: take String` to take ownership, or write `s.clone()`
 ```
 
 Write `take String` when you mean to consume it.
+
+**Giving a `for` binding away.** `for w in words` iterates by shared reference (D12), so `w` is a
+`&String` and a `take` parameter will not accept it. Write `for w in take words` to consume the
+collection — the message says so, and names D12, because a loop that looks like it moves does not.
+
+**Expecting `String?` to mean `Option<&String>`.** `str` and `[T]` mean `&str` and `&[T]` under
+`?`; `String` and `Vec<T>` do not. So `-> String?` against `v.first()` is a mismatch, and the fix
+is `.cloned()` or a return type the elision rule accepts (§9.7).
 
 **A slice of `str`.** `str` means `&str` where a parameter *is* one, not inside a slice of them:
 write `[&str]`, not `[str]`.
@@ -845,7 +872,16 @@ the value as an expression instead, which usually reads better anyway.
 **`Option::unwrap_or_else` takes no argument** where `Result`'s takes one. That is Rust's
 distinction, and rustc's message arrives on your Uredo line.
 
-**A two-parameter closure needs parentheses**: `(a, b) => …`, not `a, b => …`.
+**A two-parameter closure needs parentheses**: `(a, b) => …`, not `a, b => …`. Without them the
+first parameter reads as an argument to the call, which rustc can only report as a name it cannot
+find — so Uredo says what it actually is:
+
+```text
+error[E0425]: `a` reads as an argument here, but it looks like the first parameter of a closure
+3 |     t: i32 = v.iter().fold(0, a, b => a + *b)
+  |                               ^ parsed as an argument
+  = help: a closure with more than one parameter needs parentheses: write `(a, …) => …` (§17)
+```
 
 **Naming a binding `crate`, `self`, `Self` or `super`.** Every other Rust keyword is escaped to
 `r#name` for you; these four have no raw form, and Uredo says so rather than emitting something that

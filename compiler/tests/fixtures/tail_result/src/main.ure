@@ -1,0 +1,8 @@
+##! Negative fixture (§15.3, §27): a `throws` body wraps its tail in `Ok`, so a tail that is
+##! already a `Result` is wrapped twice. The fix is `?`, and the diagnostic has to name it.
+
+fn read() -> String throws std::io::Error:
+    std::fs::read_to_string("x")
+
+fn main():
+    print("{:?}", read())

@@ -1,0 +1,8 @@
+##! Negative fixture (§17, §27): a closure with more than one parameter needs parentheses.
+##! Without them the first parameter reads as an argument, and rustc can only report it as a name
+##! it cannot find — which is true, and no help at all.
+
+fn main():
+    v = [1, 2, 3]
+    t: i32 = v.iter().fold(0, a, b => a + *b)
+    print("{t}")

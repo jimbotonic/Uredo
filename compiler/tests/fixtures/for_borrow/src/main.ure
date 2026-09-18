@@ -1,0 +1,11 @@
+##! Negative fixture (D12, §16, §27): `for w in words` iterates by shared reference, so `w` is a
+##! `&String` and cannot be given to a `take` parameter. This is the other half of `for_iter`:
+##! there the source was an iterator, here it is a collection and the binding is the borrow.
+
+fn consume(s: take String):
+    print("{s}")
+
+fn main():
+    words = Vec::from([String::from("a")])
+    for w in words:
+        consume(w)
