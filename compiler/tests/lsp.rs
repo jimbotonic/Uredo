@@ -191,3 +191,186 @@ fn the_last_good_tree_answers_when_even_a_partial_parse_cannot() {
     assert!(text.contains("greet(&who)"), "{}", text);
     assert!(text.contains("last version that compiled"), "this one must be marked stale:\n{}", text);
 }
+
+// ----- the outline and jump-to-definition (§28.2) ----------------------------------------------
+
+const TYPES: &str = "##! The types.\\n\\npub struct Item:\\n    id: u64\\n    name: String\\n\\n    fn label(self) -> String:\\n        format(\\\"{}\\\", self.id)\\n\\npub enum Status:\\n    Open\\n    Closed(String)\\n";
+
+/// The outline an editor shows in its breadcrumbs and its symbol picker.
+#[test]
+fn the_outline_nests_fields_methods_and_variants() {
+    let (_, got) = session(&[
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        &format!(r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///o.ure","text":"{}"}}}}}}"#, TYPES),
+        r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///o.ure"}}}"#,
+        r#"{"jsonrpc":"2.0","id":3,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]);
+    assert_eq!(got[0]["result"]["capabilities"]["documentSymbolProvider"], true);
+    let symbols = got.iter().find(|m| m["id"] == 2).expect("a documentSymbol reply")["result"].as_array().unwrap().clone();
+    assert_eq!(symbols.len(), 2, "a struct and an enum, and not the `##!` doc: {:?}", symbols);
+
+    let item = &symbols[0];
+    assert_eq!(item["name"], "Item");
+    assert_eq!(item["kind"], 23, "SymbolKind::Struct");
+    assert_eq!(item["detail"], "pub struct Item", "the declaration is its own best description");
+    // the range covers the body; the selection range is the name, so `go to symbol` lands on it
+    assert_eq!(item["range"]["start"]["line"], 2);
+    assert_eq!(item["range"]["end"]["line"], 7, "through the nested method: {:?}", item["range"]);
+    assert_eq!(item["selectionRange"]["start"]["character"], 11, "the `I` of `Item`");
+
+    let kids = item["children"].as_array().unwrap();
+    let names: Vec<&str> = kids.iter().map(|c| c["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["id", "name", "label"], "fields then the nested method (§12)");
+    assert_eq!(kids[0]["kind"], 8, "SymbolKind::Field");
+    assert_eq!(kids[2]["kind"], 6, "a nested method is a Method, not a Function");
+
+    let status = &symbols[1];
+    assert_eq!(status["kind"], 10, "SymbolKind::Enum");
+    let variants: Vec<&str> = status["children"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap()).collect();
+    assert_eq!(variants, vec!["Open", "Closed"], "the payload is not part of the name");
+}
+
+/// The reason this is built on the parser and not on a full compile.
+///
+/// A file mid-edit usually does not compile, and an outline that empties itself on every keystroke
+/// is worse than no outline at all. The parser recovers at item boundaries, so every item but the
+/// broken one is still there — §28.2's tolerance, for the price of not asking the lowerer.
+#[test]
+fn the_outline_survives_a_file_that_does_not_compile() {
+    let broken = "fn alpha() -> u32:\\n    1\\n\\nfn beta(x: u32) -> u32:\\n    x +\\n\\nfn gamma() -> u32:\\n    2\\n";
+    let (_, got) = session(&[
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        &format!(r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///b.ure","text":"{}"}}}}}}"#, broken),
+        r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":"file:///b.ure"}}}"#,
+        r#"{"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///b.ure"},"position":{"line":6,"character":4}}}"#,
+        r#"{"jsonrpc":"2.0","id":4,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]);
+    let published: Vec<&serde_json::Value> = got.iter().filter(|m| m["method"] == "textDocument/publishDiagnostics").collect();
+    assert!(!published[0]["params"]["diagnostics"].as_array().unwrap().is_empty(), "the file really does not compile");
+
+    let symbols = got.iter().find(|m| m["id"] == 2).expect("a documentSymbol reply")["result"].as_array().unwrap().clone();
+    let names: Vec<&str> = symbols.iter().map(|s| s["name"].as_str().unwrap()).collect();
+    assert_eq!(names, vec!["alpha", "beta", "gamma"], "every item but the broken one is still there");
+
+    let def = got.iter().find(|m| m["id"] == 3).expect("a definition reply");
+    assert_eq!(def["result"]["range"]["start"]["line"], 6, "and definition still answers: {:?}", def["result"]);
+}
+
+#[test]
+fn definition_finds_an_item_and_declines_to_guess_at_a_local() {
+    let src = "const LIMIT: usize = 10\\n\\nfn total() -> usize:\\n    extra = 1\\n    LIMIT + extra\\n";
+    let (_, got) = session(&[
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        &format!(r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///d.ure","text":"{}"}}}}}}"#, src),
+        r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///d.ure"},"position":{"line":4,"character":5}}}"#,
+        r#"{"jsonrpc":"2.0","id":3,"method":"textDocument/definition","params":{"textDocument":{"uri":"file:///d.ure"},"position":{"line":4,"character":14}}}"#,
+        r#"{"jsonrpc":"2.0","id":4,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]);
+    assert_eq!(got[0]["result"]["capabilities"]["definitionProvider"], true);
+
+    let constant = got.iter().find(|m| m["id"] == 2).expect("a definition reply");
+    assert_eq!(constant["result"]["uri"], "file:///d.ure");
+    assert_eq!(constant["result"]["range"]["start"]["line"], 0, "the `const` on line 1");
+    assert_eq!(constant["result"]["range"]["start"]["character"], 6, "the `L` of `LIMIT`");
+
+    // `extra` is a local binding. Tracking scopes is not something the parser keeps, and answering
+    // with the wrong `extra` would be worse than answering nothing, so this declines.
+    let local = got.iter().find(|m| m["id"] == 3).expect("a definition reply");
+    assert!(local["result"].is_null(), "a local should get no answer rather than a guess: {:?}", local["result"]);
+}
+
+/// §20.3 makes a file a module, so a name the open file does not declare is most often declared by
+/// a sibling. The server has no project model and needs none for this: the directory is the module
+/// list. This is the one test that needs files on disk, because that lookup reads them.
+#[test]
+fn definition_crosses_into_a_sibling_module() {
+    let dir = std::env::temp_dir().join(format!("uredo-lsp-def-{}", std::process::id()));
+    let src = dir.join("src");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&src).expect("create the package");
+    std::fs::write(src.join("model.ure"), "pub struct Item:\n    id: u64\n").expect("write model");
+    let main = src.join("main.ure");
+    std::fs::write(&main, "use crate::model::Item\n\nfn describe(item: Item) -> u64:\n    item.id\n").expect("write main");
+
+    let uri = format!("file://{}", main.display());
+    let (_, got) = session(&[
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        // built rather than escaped by hand: a mis-escaped message would still be valid JSON and
+        // the test would then pass on a document that is not the one on disk
+        &serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": uri, "text": std::fs::read_to_string(&main).unwrap()}},
+        })
+        .to_string(),
+        // the cursor sits on `Item` in the parameter list, which this file only imports
+        &format!(r#"{{"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{{"textDocument":{{"uri":"{}"}},"position":{{"line":2,"character":19}}}}}}"#, uri),
+        r#"{"jsonrpc":"2.0","id":3,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]);
+    let def = got.iter().find(|m| m["id"] == 2).expect("a definition reply")["result"].clone();
+    assert!(!def.is_null(), "the sibling declares it: {:?}", def);
+    assert!(def["uri"].as_str().unwrap().ends_with("model.ure"), "{:?}", def);
+    assert_eq!(def["range"]["start"]["line"], 0, "`pub struct Item` is the first line of the sibling");
+    assert_eq!(def["range"]["start"]["character"], 11, "the `I` of `Item`");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Completion offers what it knows and refuses what it would have to guess.
+#[test]
+fn completion_offers_items_and_keywords_but_nothing_after_a_selector() {
+    // A body that parses. A function whose body is still empty does not (§11), so while it is being
+    // typed the function itself is not yet an item and is not offered — which is a real limit worth
+    // knowing, and not what this test is about.
+    let src = "const LIMIT: usize = 10\\n\\nstruct Item:\\n    id: u64\\n\\nfn total(it: Item) -> usize:\\n    LIMIT\\n";
+    let (_, got) = session(&[
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        &format!(r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///k.ure","text":"{}"}}}}}}"#, src),
+        // inside a body, not after a selector: everything in scope
+        r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///k.ure"},"position":{"line":6,"character":9}}}"#,
+        r#"{"jsonrpc":"2.0","id":3,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]);
+    assert!(got[0]["result"]["capabilities"]["completionProvider"].is_object());
+
+    let result = got.iter().find(|m| m["id"] == 2).expect("a completion reply")["result"].clone();
+    let items = result["items"].as_array().unwrap();
+    let labels: Vec<&str> = items.iter().map(|i| i["label"].as_str().unwrap()).collect();
+    assert!(labels.contains(&"LIMIT"), "{:?}", labels);
+    assert!(labels.contains(&"Item"), "{:?}", labels);
+    assert!(labels.contains(&"total"), "{:?}", labels);
+    assert!(labels.contains(&"take"), "the keywords are offered too: {:?}", labels);
+    assert!(!labels.contains(&"id"), "a field is only reachable through a receiver: {:?}", labels);
+
+    // kinds, so an editor's icons mean something: Constant, Struct, Function, Keyword
+    let kind = |name: &str| items.iter().find(|i| i["label"] == name).unwrap()["kind"].as_u64().unwrap();
+    assert_eq!(kind("LIMIT"), 21);
+    assert_eq!(kind("Item"), 22);
+    assert_eq!(kind("total"), 3);
+    assert_eq!(kind("take"), 14);
+}
+
+/// The refusal is the feature. After `.` or `::` the useful answer is a member of whatever is on
+/// the left, and Uredo has no type engine to ask (§4.4). Offering every top-level name instead
+/// teaches people to stop reading the list.
+#[test]
+fn completion_says_nothing_where_it_would_have_to_guess() {
+    let src = "struct Item:\\n    id: u64\\n\\nfn total(it: Item) -> usize:\\n    it.\\n";
+    let (_, got) = session(&[
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+        &format!(r#"{{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{{"textDocument":{{"uri":"file:///s.ure","text":"{}"}}}}}}"#, src),
+        // the cursor is just after `it.`
+        r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///s.ure"},"position":{"line":4,"character":7}}}"#,
+        // and just after `it.i`, part-way through a member name
+        r#"{"jsonrpc":"2.0","id":3,"method":"textDocument/completion","params":{"textDocument":{"uri":"file:///s.ure"},"position":{"line":4,"character":8}}}"#,
+        r#"{"jsonrpc":"2.0","id":4,"method":"shutdown"}"#,
+        r#"{"jsonrpc":"2.0","method":"exit"}"#,
+    ]);
+    for id in [2, 3] {
+        let items = got.iter().find(|m| m["id"] == id).expect("a completion reply")["result"]["items"].as_array().unwrap().clone();
+        assert!(items.is_empty(), "nothing is the right answer after a selector: {:?}", items);
+    }
+}
