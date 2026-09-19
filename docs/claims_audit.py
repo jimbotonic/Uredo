@@ -206,6 +206,34 @@ def check_cross_document_counts(path, lines):
             report("cross-document claim", "%s says %s (%d) from %s, whose list has %d" % (path, m.group(1), declared, where, found))
 
 
+# ---- a generated file that is older than what generates it -----------------------------------
+
+def check_generated_freshness():
+    """`docs/MANUAL.pdf` is built from `docs/MANUAL.md`, and the README says the two "cannot
+    drift". They drifted the same day the claim was last edited: the manual was corrected and the
+    PDF was not rebuilt. Rebuilding it to find out costs half a minute of LaTeX, so this asks git
+    instead — which commit last touched each. In a fresh clone both arrive together and this says
+    nothing; in the repository where the editing happens, it is the whole answer."""
+    pairs = [("docs/MANUAL.md", "docs/MANUAL.pdf")]
+    for source, generated in pairs:
+        if not (os.path.exists(os.path.join(ROOT, source)) and os.path.exists(os.path.join(ROOT, generated))):
+            continue
+        # A file with uncommitted changes has a git history that says nothing about what is on
+        # disk. The mirror copies both files and asks this before committing either, which read as
+        # the very staleness it was written to catch.
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", source, generated], cwd=ROOT, capture_output=True, text=True)
+        if dirty.returncode != 0 or dirty.stdout.strip():
+            continue
+        when = {}
+        for f in (source, generated):
+            out = subprocess.run(["git", "log", "-1", "--format=%ct", "--", f], cwd=ROOT, capture_output=True, text=True)
+            if out.returncode != 0 or not out.stdout.strip():
+                return
+            when[f] = int(out.stdout.strip())
+        if when[source] > when[generated]:
+            report("stale generated file", "%s was last committed after %s; rebuild it (docs/pdf/build.sh)" % (source, generated))
+
+
 def main():
     for path in audited_markdown():
         lines = open(os.path.join(ROOT, path), encoding="utf-8").read().split("\n")
@@ -214,6 +242,7 @@ def main():
         check_links(path, lines)
         check_cross_document_counts(path, lines)
     check_repository_counts()
+    check_generated_freshness()
 
     if problems:
         print("\n".join(sorted(set(problems))))
